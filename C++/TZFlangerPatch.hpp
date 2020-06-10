@@ -41,7 +41,10 @@
 #define __TZFlangerPatch_hpp__
 
 #include "DelayLine.hpp"
+
+#ifdef OWL_MAGUS
 #include "ScreenBuffer.h"
+#endif
 
 constexpr unsigned int FLANGER_BUFFER_SIZE = 2048;
 
