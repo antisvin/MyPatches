@@ -123,11 +123,15 @@ public:
 
           if (ch) {
             mod = getMod(mod, mirror);
+#ifdef OWL_MAGUS
             pos[1] = mod * 24;
+#endif
           }
+#ifdef OWL_MAGUS
           else {
             pos[0] = mod * 24;
           }
+#endif
 
           mod -= 2 * ch * mod * mirror; // modulation function for channel 2
           delay = (0.5f + depth * mod) * (FLANGER_BUFFER_SIZE - 1);
