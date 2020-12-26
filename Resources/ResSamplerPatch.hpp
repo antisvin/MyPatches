@@ -8,14 +8,14 @@
 #include "VoltsPerOctave.h"
 #include "Control.h"
 #include "SmoothValue.h"
-#include "ScreenBuffer.h"
+#include "MonochromeScreenPatch.h"
 
 #define SAMPLE_NAME "sample.wav"
 #define MIDDLE_C 261.6
 
 // Choose one of the 3 options above
-//#define RESOURCE_MEMORY_MAPPED
-#define RESOURCE_LOADED
+#define RESOURCE_MEMORY_MAPPED
+//#define RESOURCE_LOADED
 
 
 /*
@@ -244,7 +244,7 @@ public:
     }
 };
 
-class ResSamplerPatch : public Patch {
+class ResSamplerPatch : public MonochromeScreenPatch {
 private:
     Voices<8> voices;
     bool is_loaded;
@@ -255,16 +255,18 @@ private:
     Resource resource;
     #endif
 
-#ifdef USE_SCREEN
     static constexpr int8_t preview_scale = 50;
-    int8_t preview_hi[128];
-    int8_t preview_lo[128];
+    int8_t* preview_hi;
+    int8_t* preview_lo;
 
     void storePreview(const FloatArray& sample){
         // This ended up not particularly pretty, but at least gives a hint about loaded data
         size_t length = sample.getSize();
-        size_t step = length / 128;
-        for (int i = 0; i < 128; i++) {
+        size_t width = getScreenWidth();
+        size_t step = length / width;
+        preview_hi = new int8_t[width];
+        preview_lo = new int8_t[width];
+        for (int i = 0; i < width; i++) {
             float max_val = 0, min_val = 0;
             for (size_t j = i * step; j < (i + 1) * step; j++){
                 float val = sample[j];
@@ -275,25 +277,32 @@ private:
             preview_lo[i] = min_val * preview_scale;
         }
     }
-#endif
 public:
-#ifdef USE_SCREEN
-    void processScreen(ScreenBuffer& screen){
+    uint16_t getScreenWidth(){
+        return 128;
+    }
+
+    uint16_t getScreenHeight(){
+        return 64;
+    }
+
+    void processScreen(MonochromeScreenBuffer& screen) {
+        size_t width = getScreenWidth();
 #ifdef RESOURCE_MEMORY_MAPPED
-        screen.print(110, 10, "F");
+        screen.print(width - 10, 10, "F");
 #elif defined(RESOURCE_LOADED)
-        screen.print(110, 10, "M");
+        screen.print(width - 10, 10, "M");
 #endif
-        for (int i = 0; i < screen.getWidth(); i++) {
+        for (int i = 0; i < width; i++) {
             screen.setPixel(i, 20 + preview_hi[i], WHITE);
             screen.setPixel(i, 20 + preview_lo[i], WHITE);
         }
-        screen.setCursor(110, 44);
+        size_t height = getScreenHeight();
+        screen.setCursor(width - 18, height / 2 + 12);
         screen.print(voices.getAllocatedCount());
         screen.print("v.");
-   }
-#endif
-    ResSamplerPatch() : Patch() {
+    }
+    ResSamplerPatch() : MonochromeScreenPatch() {
         registerParameter(PARAMETER_A, "Pitchbend");
         registerParameter(PARAMETER_D, "Envelope");
 
@@ -310,9 +319,7 @@ public:
             const FloatArray sample = resource->asArray<FloatArray, float>();
             //FloatArray* sample_ptr = const_cast<FloatArray*>(&sample);
             voices = Voices<8>(getSampleRate(), getBlockSize(), sample);
-#ifdef USE_SCREEN
             storePreview(sample);
-#endif
             voices = Voices<8>(getSampleRate(), getBlockSize(), sample);
             is_loaded = true;
         }
@@ -321,9 +328,7 @@ public:
         resource = Resource::load(SAMPLE_NAME);
         if (resource.hasData()){
             sample = resource.asArray<FloatArray, float>();
-#ifdef USE_SCREEN
             storePreview(sample);
-#endif
             is_loaded = true;
             // Sample is immutable if we read from flash
             float divisor = max(abs(sample.getMaxValue()), abs(sample.getMinValue()));
@@ -332,7 +337,6 @@ public:
             voices = Voices<8>(getSampleRate(), getBlockSize(), sample);
         }
         #endif
-
     }
     ~ResSamplerPatch() {
 #ifdef RESOURCE_MEMORY_MAPPED
@@ -341,6 +345,8 @@ public:
 #elif defined(RESOURCE_LOADED)
         Resource::destroy(resource);
 #endif
+        delete [] preview_hi;
+        delete [] preview_lo;
     }
     
     void buttonChanged(PatchButtonId bid, uint16_t value, uint16_t samples) {
