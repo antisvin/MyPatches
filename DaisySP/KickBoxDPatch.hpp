@@ -37,7 +37,7 @@ private:
   uint8_t midinote;
   float mult;
 public:
-  KickBoxPatch(){    
+  KickBoxDPatch(){
     // Physical modeling voice
     registerParameter(PARAMETER_A, "Base Note");
     setParameterValue(PARAMETER_A, 0.3);
@@ -91,7 +91,7 @@ public:
     mult = getBlockSize() / getSampleRate();
   }
 
-  ~KickBoxPatch(){
+  ~KickBoxDPatch(){
 //    delete hat;
 //    delete kick;
     delete voice;
