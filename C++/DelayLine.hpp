@@ -18,16 +18,16 @@ public:
   /**
    * delay line can allocate memory instead of using preallocated buffer
    */
-  void create() {
-    buffer = new T[max_delay];
-    reset();
+  static DelayLine create() {
+    auto buffer = new T[max_delay];
+    return DelayLine(buffer);
   }
 
   /**
    * this must always be called if buffer was allocated by create()
    */
-  void destroy() {
-    delete[] buffer;
+  static void destroy(DelayLine delay) {
+    delete[] delay.buffer;
   }
 
   void reset() {
@@ -40,7 +40,7 @@ public:
    */
   inline void write(const T value) {
     buffer[writeIndex] = value;
-    writeIndex = ++writeIndex % max_delay;
+    writeIndex = (writeIndex - 1 + max_delay) % max_delay;
   }
 
   /**
@@ -55,8 +55,8 @@ public:
    */
   inline const T interpolate(float index) {
     int idx = (int)index;
-    float low = read(idx);
-    float high = read(idx + 1);
+    T low = read(idx);
+    T high = read(idx + 1);
     float frac = index - idx;
     return low + (high - low) * frac;
   }
