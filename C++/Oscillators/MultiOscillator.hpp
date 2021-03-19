@@ -133,40 +133,4 @@ protected:
     float nfreq;
     float phase;
 };
-
-
-/**
- * An extra buffer is used by this class to implement block-based version of ::generate()
- */
-class BufferedMultiOscillator : public MultiOscillator {
-public:
-    BufferedMultiOscillator(size_t limit, float sr)
-        : MultiOscillator(limit, sr) {}
-    BufferedMultiOscillator(size_t limit, float freq, float sr)
-        : MultiOscillator(limit, freq, sr) {}
-    void generate(FloatArray output) override {
-        this->oscillators[this->morph_idx]->generate(output);
-        this->oscillators[this->morph_idx + 1]->generate(buf);
-        buf.subtract(output);
-        buf.multiply(this->morph_frac);
-        output.add(buf);
-    }
-    static BufferedMultiOscillator* create(size_t limit, float sr, size_t buffer_size){
-        auto osc = new BufferedMultiOscillator(limit, sr);
-        osc->buf = FloatArray::create(buffer_size);
-        return osc;
-    }
-    static BufferedMultiOscillator* create(size_t limit, float freq, float sr, size_t buffer_size){
-        auto osc = new BufferedMultiOscillator(limit, freq, sr);
-        osc->buf = FloatArray::create(buffer_size);
-        return osc;
-    }
-    static void destroy(BufferedMultiOscillator* osc){
-        FloatArray::destroy(osc->buf);
-        MultiOscillator::destroy(osc);
-    }  
-protected:
-    FloatArray buf;
-};
-
 #endif
