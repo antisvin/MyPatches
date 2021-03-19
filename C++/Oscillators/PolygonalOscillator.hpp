@@ -24,9 +24,9 @@ public:
         : BandlimitedOscillator(sr)
         , nPolyQuant(NONE) {
     }
-    PolygonalOscillator(float freq, float sr = 48000)
-        : BandlimitedOscillator(freq, sr)
-        , nPolyQuant(NONE) {
+    PolygonalOscillator(float freq, float sr)
+        : PolygonalOscillator(sr) {
+        setFrequency(freq);
     }
     void setParams(NPolyQuant quant, float nPoly, float teeth) {
         nPolyQuant = quant;

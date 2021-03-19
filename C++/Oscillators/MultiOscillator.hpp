@@ -5,29 +5,34 @@
 #include "FloatArray.h"
 
 
-template<size_t limit>
+/**
+ * A class that contains multiple child oscillators and morphs between 2 of them
+ */
 class MultiOscillator : public Oscillator {
 public:
-    MultiOscillator(float sr = 48000)
-        : mul(1.0 / sr)
+    MultiOscillator(size_t limit, float sr = 48000)
+        : limit(limit)
+        , mul(1.0 / sr)
         , nfreq(0.0)
         , phase(0) {
+        oscillators = new Oscillator*[limit];
     }
-    MultiOscillator(float freq, float sr = 48000) : MultiOscillator(sr) {
+    MultiOscillator(size_t limit, float freq, float sr) : MultiOscillator(limit, sr) {
         setFrequency(freq);
     }
 
-    ~MultiOsicllator(){
+    ~MultiOscillator(){
         for (int i = 0; i < num_oscillators; i++){
             delete oscillators[i];
         }
+        delete[] oscillators;
     }
     void reset() override {
         setPhase(0.0f);
     }
     void setSampleRate(float sr) override {
         for (int i = 0; i < num_oscillators; i++){
-            oscillators[i]->setSamplerate(sr);
+            oscillators[i]->setSampleRate(sr);
         }
         mul = 1.0f / sr;
     }
@@ -53,35 +58,49 @@ public:
         return phase * 2.0 * M_PI;
     }
     void setMorph(float morph){
-        morph *= (limit - 1);
+        morph *= (num_oscillators - 1);
         size_t morph_new = size_t(morph);
         if (morph_idx != morph_new){
             // Index changed
             if (morph_idx + 1 != morph_new) {
                 // Don't reset if we changed to previously active voice
-                oscillators[morph_new + 1].setPhase(getPhase());
+                oscillators[morph_new + 1]->setPhase(getPhase());
             }
-            oscillators[morph_new].setPhase(getPhase());
+            if (morph_idx != morph_new + 1)
+                oscillators[morph_new]->setPhase(getPhase());
             morph_idx = morph_new;
         }
-        else if ()
-        this->morph = morph;
+        morph_frac = morph - float(morph_new);
     }
     float generate() override {
-        float sample_a = oscillators[morph_idx].generate();
-        float sample_b = oscillators[morph_idx + 1].generate();
+        phase += nfreq;
+        while (phase >= 1.0) {
+            phase -= 1.0;
+        }
+        float sample_a = oscillators[morph_idx]->generate();
+        float sample_b = oscillators[morph_idx + 1]->generate();
         return sample_a + (sample_b - sample_a) * morph_frac;
     }
-    void generate(FloatArray output) override {
-        render(output.getSize(), output.getData());
+    virtual void generate(FloatArray output) override {
+        phase += nfreq * output.getSize();
+        while (phase >= 1.0) {
+            phase -= 1.0;
+        }
+        for (int i = 0; i < output.getSize(); i++){
+            output[i] = generate();
+        }
     }
     float generate(float fm) override {        
-        float sample_a = oscillators[morph_idx].generate();
-        float sample_b = oscillators[morph_idx + 1].generate();
+        float sample_a = oscillators[morph_idx]->generate();
+        float sample_b = oscillators[morph_idx + 1]->generate();
         phase += fm;
+        phase += nfreq;
+        while (phase >= 1.0) {
+            phase -= 1.0;
+        }        
         return sample_a + (sample_b - sample_a) * morph_frac;
     }
-    bool addOscillator(Oscillator osc){
+    bool addOscillator(Oscillator* osc){
         if (num_oscillators < limit){
             oscillators[num_oscillators++] = osc;
             return true;
@@ -93,44 +112,58 @@ public:
     size_t getSize() const {
         return num_oscillators;
     }
-    static MultiOscillator* create(float sr){
-        return new MultiOscillator(sr);
+    static MultiOscillator* create(size_t limit, float sr){
+        return new MultiOscillator(limit, sr);
     }
-    static MultiOscillator* create(float freq, float sr){
-        return new MultiOscillator(freq, sr);
+    static MultiOscillator* create(size_t limit, float freq, float sr){
+        return new MultiOscillator(limit, freq, sr);
     }
     static void destroy(MultiOscillator* osc){
         // We can't destroy child oscillators here, because this is a static method that
-        // has no idea about their vptrs
+        // has no idea about their vptrs. Must be done separately by caller class.
         delete osc;
     }    
 protected:
+    size_t limit = 0;
     size_t num_oscillators = 0;
-    Oscillator* oscillators[limit] = {};
+    Oscillator** oscillators;
     size_t morph_idx = 0;
-    size_t morph_frac;
+    float morph_frac;
     float mul;
     float nfreq;
     float phase;
 };
 
 
-template<size_t limit>
-class BufferedMultiOscillator : public MultiOscillator<limit> {
+/**
+ * An extra buffer is used by this class to implement block-based version of ::generate()
+ */
+class BufferedMultiOscillator : public MultiOscillator {
 public:
-    static BufferedMultiOscillator* create(float sr, size_t buffer_size){
-        auto osc = Multioscillator<limit>::create(sr);
+    BufferedMultiOscillator(size_t limit, float sr)
+        : MultiOscillator(limit, sr) {}
+    BufferedMultiOscillator(size_t limit, float freq, float sr)
+        : MultiOscillator(limit, freq, sr) {}
+    void generate(FloatArray output) override {
+        this->oscillators[this->morph_idx]->generate(output);
+        this->oscillators[this->morph_idx + 1]->generate(buf);
+        buf.subtract(output);
+        buf.multiply(this->morph_frac);
+        output.add(buf);
+    }
+    static BufferedMultiOscillator* create(size_t limit, float sr, size_t buffer_size){
+        auto osc = new BufferedMultiOscillator(limit, sr);
         osc->buf = FloatArray::create(buffer_size);
         return osc;
     }
-    static BufferMultiOscillator* create(float freq, float sr, size_t buffer_size){
-        auto osc = MultiOscillator<limit>::create(freq, sr);
+    static BufferedMultiOscillator* create(size_t limit, float freq, float sr, size_t buffer_size){
+        auto osc = new BufferedMultiOscillator(limit, freq, sr);
         osc->buf = FloatArray::create(buffer_size);
         return osc;
     }
     static void destroy(BufferedMultiOscillator* osc){
         FloatArray::destroy(osc->buf);
-        MultiOscillator<limit>::destroy(osc);
+        MultiOscillator::destroy(osc);
     }  
 protected:
     FloatArray buf;
