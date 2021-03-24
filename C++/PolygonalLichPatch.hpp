@@ -1,7 +1,6 @@
-#ifndef __POLYGONAL_VCO_PATCH_HPP__
-#define __POLYGONAL_VCO_PATCH_HPP__
+#ifndef __POLYGONAL_LICH_PATCH_HPP__
+#define __POLYGONAL_LICH_PATCH_HPP__
 
-#include "MonochromeScreenPatch.h"
 #include "Oscillators/PolygonalOscillator.hpp"
 #include "Oscillators/MultiOscillator.hpp"
 #include "SineOscillator.h"
@@ -12,32 +11,31 @@
 
 #define BASE_FREQ 55.f
 #define MAX_POLY 20.f
-#define PREVIEW_FREQ 2.0f
-#define SCREEN_WIDTH 128 // Hardcoded to make initialization easier
-#define SCREEN_BUF_OVERLAP (SCREEN_WIDTH / 8)
-#define SCREEN_PREVIEW_BUF_SIZE (SCREEN_WIDTH / 2 + SCREEN_BUF_OVERLAP)
 #define MAX_FM_AMOUNT 0.2f
 #define FM_AMOUNT_MULT (1.f / MAX_FM_AMOUNT)
-#define SCREEN_OFFSET(x) ((x)*SCREEN_WIDTH / 4 - int(SCREEN_WIDTH / 16))
 
+// Oversampling ends up sounding fairly disappointing
 //#define OVERSAMPLE_FACTOR 4
 
+
 struct Point {
-    float x, y;
     Point() = default;
-    Point(float x, float y)
-        : x(x)
-        , y(y) {};
+    Point(float x, float y) : x(x), y(y) {};
+    float x, y;
+
     friend Point operator+(Point lhs, const Point& rhs) {
         return Point(lhs.x + rhs.x, lhs.y + rhs.y);
     }
+
     friend Point operator-(Point lhs, const Point& rhs) {
         return Point(lhs.x - rhs.x, lhs.y - rhs.y);
     }
+
     Point operator*(float val) {
         return Point(x * val, y * val);
-    }
+    }    
 };
+
 
 class ModOscillator : public MultiOscillator {
 public:
@@ -50,17 +48,14 @@ public:
         addOscillator(&osc2);
         addOscillator(&osc3);
     }
-
 private:
     SineOscillator osc1, osc2, osc3;
 };
 
-class PolygonalVCOPatch : public MonochromeScreenPatch {
+class PolygonalLichPatch : public Patch {
 private:
     PolygonalOscillator osc;
-    PolygonalOscillator osc_preview;
     ModOscillator mod;
-    ModOscillator mod_preview;
     PolygonalOscillator::NPolyQuant quant;
 #ifdef OVERSAMPLE_FACTOR
     UpSampler* upsampler_pitch;
@@ -69,36 +64,31 @@ private:
     DownSampler* downsampler_right;
     AudioBuffer* oversample_buf;
 #endif
-    FloatArray preview;
+    bool isModeA, isModeB;
     float fm_ratio;
     float fm_amount;
     VoltsPerOctave hz;
-    DelayLine<Point, 128> preview_buf;
-
 public:
-    PolygonalVCOPatch()
-        : hz(true)
+    PolygonalLichPatch()
+        :
 #ifdef OVERSAMPLE_FACTOR
-        , osc(BASE_FREQ, getSampleRate() * OVERSAMPLE_FACTOR)
+          osc(BASE_FREQ, getSampleRate() * OVERSAMPLE_FACTOR)
         , mod(BASE_FREQ, getSampleRate() * OVERSAMPLE_FACTOR)
 #else
-        , osc(BASE_FREQ, getSampleRate())
+          osc(BASE_FREQ, getSampleRate())
         , mod(BASE_FREQ, getSampleRate())
 #endif
-        , osc_preview(1.0f, float(SCREEN_WIDTH / 2))
-        , mod_preview(PREVIEW_FREQ, float(SCREEN_WIDTH / 2)) {
+    {
         registerParameter(PARAMETER_A, "Tune");
-        registerParameter(PARAMETER_B, "Quantize");
+        registerParameter(PARAMETER_B, "Teeth");
         registerParameter(PARAMETER_C, "NPoly");
-        registerParameter(PARAMETER_D, "Teeth");
-        registerParameter(PARAMETER_E, "FM Amount");
-        setParameterValue(PARAMETER_E, 0.0);
-        registerParameter(PARAMETER_F, "FM Mod Shape");
-        setParameterValue(PARAMETER_F, 0.0);
-        registerParameter(PARAMETER_G, "Ext FM Amount");
-        setParameterValue(PARAMETER_G, 0.0);
-        preview = FloatArray::create(SCREEN_PREVIEW_BUF_SIZE);
-        preview_buf = DelayLine<Point, 128>::create();
+        registerParameter(PARAMETER_D, "Quantize");
+        registerParameter(PARAMETER_AA, "FM Amount");
+        setParameterValue(PARAMETER_AA, 0.0);
+        registerParameter(PARAMETER_AB, "FM Mod Shape");
+        setParameterValue(PARAMETER_AB, 0.0);
+        registerParameter(PARAMETER_AC, "Ext FM Amount");
+        setParameterValue(PARAMETER_AC, 0.0);
 #ifdef OVERSAMPLE_FACTOR
         upsampler_pitch = UpSampler::create(1, OVERSAMPLE_FACTOR);
         upsampler_fm = UpSampler::create(1, OVERSAMPLE_FACTOR);
@@ -108,9 +98,7 @@ public:
 #endif
     }
 
-    ~PolygonalVCOPatch() {
-        FloatArray::destroy(preview);
-        DelayLine<Point, 128>::destroy(preview_buf);
+    ~PolygonalLichPatch(){
 #ifdef OVERSAMPLE_FACTOR
         UpSampler::destroy(upsampler_pitch);
         UpSampler::destroy(upsampler_fm);
@@ -120,40 +108,51 @@ public:
 #endif
     }
 
-    void processScreen(MonochromeScreenBuffer& screen) {
-        // New data gets added after previous cycle's tail
-        FloatArray wave_array(
-            preview.getData() + SCREEN_BUF_OVERLAP, SCREEN_PREVIEW_BUF_SIZE);
-        float height_offset = screen.getHeight() * 0.3;
-        float mod_prev = height_offset;
-        mod_preview.reset();
-        mod_preview.setMorph(fm_ratio);
-        for (int i = 0; i < SCREEN_WIDTH / 2; i++) {
-            // Mod VCO preview
-            float mod_sample = mod_preview.generate() * fm_amount;
-            float mod_new = (mod_sample + 1.0) * height_offset;
-            screen.drawVerticalLine(SCREEN_WIDTH / 2 + i, std::min(mod_prev, mod_new),
-                std::max(1.0, abs(mod_new - mod_prev)), WHITE);
-            mod_prev = mod_new;
-
-            Point p = preview_buf.read(float(i) * 64.0 / 50.0);
-            screen.setPixel(SCREEN_OFFSET(p.x + 1.0), SCREEN_OFFSET(p.y + 1), WHITE);
+    void buttonChanged(PatchButtonId bid, uint16_t value, uint16_t samples) override {
+        switch(bid){
+        case BUTTON_A:
+            if(value)
+                isModeA = !isModeA;
+            setButton(BUTTON_A, isModeA, 0);
+            if (isModeA) {
+                setButton(BUTTON_B, false, 0);
+                isModeB = false;
+            }
+            break;
+        case BUTTON_B:
+            if(value)
+                isModeB = !isModeB;
+            setButton(BUTTON_B, isModeB, 0);        
+            if (isModeB) {
+                setButton(BUTTON_A, false, 0);
+                isModeA = false;
+            }
+            break;
+        default:
+            break;
         }
-        FloatArray::copy(preview, preview + SCREEN_WIDTH / 2, SCREEN_BUF_OVERLAP);
     }
+
     void processAudio(AudioBuffer& buffer) {
         hz.setTune(-3.0 + getParameterValue(PARAMETER_A) * 4.0);
         FloatArray left = buffer.getSamples(LEFT_CHANNEL);
         FloatArray right = buffer.getSamples(RIGHT_CHANNEL);
 
-        fm_amount = getParameterValue(PARAMETER_E);
-        fm_ratio = getParameterValue(PARAMETER_F);
-        float ext_fm_amt = getParameterValue(PARAMETER_G);
+        // Update params in FM settings
+        if (isModeA) {
+            setParameterValue(PARAMETER_AA, getParameterValue(PARAMETER_B));
+            setParameterValue(PARAMETER_AB, getParameterValue(PARAMETER_C));
+            setParameterValue(PARAMETER_AC, getParameterValue(PARAMETER_D));
+        }
+
+        float ext_fm_amt = getParameterValue(PARAMETER_AC);
+        fm_amount = getParameterValue(PARAMETER_AA);
+        fm_ratio = getParameterValue(PARAMETER_AB) * MAX_FM_AMOUNT;        
     
         osc.setParams(
-            updateQuant(getParameterValue(PARAMETER_B)),
+            updateQuant(getParameterValue(PARAMETER_D)),
             getParameterValue(PARAMETER_C),
-            getParameterValue(PARAMETER_D));
+            getParameterValue(PARAMETER_B));
 
         // Carrier / modulator frequency
         float freq = hz.getFrequency(left[0]);
@@ -176,14 +175,12 @@ public:
 #else
         AudioBuffer& audio_buf = buffer;
 #endif
-
         // Generate quadrature output
         osc.generate(audio_buf, audio_buf.getSamples(1));
-        preview_buf.write(Point(audio_buf.getSamples(0)[0], audio_buf.getSamples(1)[0]));
 
 #ifdef OVERSAMPLE_FACTOR
-        downsampler_left->process(audio_buf.getSamples(0), left);
-        downsampler_right->process(audio_buf.getSamples(1), right);
+        downsampler_left->process(oversample_buf->getSamples(0), left);
+        downsampler_right->process(oversample_buf->getSamples(1), right);
 #endif
     }
 

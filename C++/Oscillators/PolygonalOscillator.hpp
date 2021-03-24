@@ -7,10 +7,9 @@
  */
 
 #include <cmath>
-#include "BandlimitedOscillator.hpp"
+#include "QuadratureOscillator.hpp"
 
-template<bool imaginary=false>
-class PolygonalOscillator : public BandlimitedOscillator {
+class PolygonalOscillator : public QuadratureOscillator {
 public:
     enum NPolyQuant {
         NONE,
@@ -21,12 +20,36 @@ public:
         NUM_NPOLYQUANT,
     };
     PolygonalOscillator(float sr = 48000)
-        : BandlimitedOscillator(sr)
+        : QuadratureOscillator(sr)
+        , mul(1.0 / sr)
+        , nfreq(0.0)
+        , phase(0)
         , nPolyQuant(NONE) {
     }
     PolygonalOscillator(float freq, float sr)
         : PolygonalOscillator(sr) {
         setFrequency(freq);
+    }
+    void reset() override {
+        phase = 0.0f;
+    }
+    void setSampleRate(float sr) override {
+        mul = 1.0f / sr;
+    }
+    float getSampleRate() override {
+        return 1.0f / mul;
+    }
+    void setFrequency(float freq) override {
+        nfreq = mul * freq;
+    }
+    float getFrequency() override {
+        return nfreq / mul;
+    }
+    void setPhase(float phase) override {
+        this->phase = phase / (M_PI * 2.0);
+    }
+    float getPhase() override {
+        return phase * 2.0 * M_PI;
     }
     void setParams(NPolyQuant quant, float nPoly, float teeth) {
         nPolyQuant = quant;
@@ -66,22 +89,27 @@ public:
         this->teeth = teeth;
         gain = 0.5f - 0.25f * teeth;
     }
-
-    float getX() const {
-        return xout;
+    void generate(AudioBuffer& output) override {
+        render<false>(output.getSize(), NULL, output.getSamples(0).getData(), output.getSamples(1).getData());
     }
-
-    float getY() const {
-        return yout;
+    ComplexFloat generate(float fm) override {
+        ComplexFloat sample;
+        render<true>(1, &fm, (float*)&sample.re, (float*)&sample.im);
+        return sample;
+    }
+    void generate(AudioBuffer& output, FloatArray fm) override {
+        render<true>(
+            output.getSize(), fm.getData(), output.getSamples(0).getData(), output.getSamples(1).getData());
     }
 
 protected:
-    void render(size_t size, float* out) {
+    template<bool with_fm>
+    void render(size_t size, float* fm, float* out_x, float* out_y) {
         while (size--) {
             phase += nfreq;
-            if (phase >= 0.5f)
+            if (phase >= 1.0f)
                 phase -= 1.f;
-            else if (phase <= -0.5f)
+            else if (phase < 0.0f)
                 phase += 1.f;
 
             modPhase += nfreq * nPoly;
@@ -137,10 +165,8 @@ protected:
 
             xout0 = 0.f;
             xout1 = x;
-            if (imaginary) {
-                yout0 = 0.f;
-                yout1 = y;
-            }
+            yout0 = 0.f;
+            yout1 = y;
             if (correction == 1.f) {
                 d1 = fracDelay;
                 d2 = d1 * d1;
@@ -163,12 +189,10 @@ protected:
                     xout2 = xout2 + fx * h2;
                     xout3 = xout3 + fx * h3;
 
-                    if (imaginary){
-                        yout0 = yout0 + fy * h0;
-                        yout1 = yout1 + fy * h1;
-                        yout2 = yout2 + fy * h2;
-                        yout3 = yout3 + fy * h3;
-                    }
+                    yout0 = yout0 + fy * h0;
+                    yout1 = yout1 + fy * h1;
+                    yout2 = yout2 + fy * h2;
+                    yout3 = yout3 + fy * h3;
                 }
 
                 // PolyBlam Correction
@@ -184,36 +208,36 @@ protected:
                 xout2 = xout2 + fxprime * h2;
                 xout3 = xout3 + fxprime * h3;
 
-                if (imaginary){
-                    yout0 = yout0 + fyprime * h0;
-                    yout1 = yout1 + fyprime * h1;
-                    yout2 = yout2 + fyprime * h2;
-                    yout3 = yout3 + fyprime * h3;
-                }
+                yout0 = yout0 + fyprime * h0;
+                yout1 = yout1 + fyprime * h1;
+                yout2 = yout2 + fyprime * h2;
+                yout3 = yout3 + fyprime * h3;
             }
             // Output
             xout = gain * xout3;
-            if (imaginary)
-                yout = clamp(gain * yout3, -1.f, 1.f);
+            yout = clamp(gain * yout3, -1.f, 1.f);
 
             // Keep values for the next iteration
             modPhasePrev = modPhase;
             xout3 = xout2;
             xout2 = xout1;
             xout1 = xout0;
-            if (imaginary){
-                yout3 = yout2;
-                yout2 = yout1;
-                yout1 = yout0;
-            }
+            yout3 = yout2;
+            yout2 = yout1;
+            yout1 = yout0;
+
+            if (with_fm)
+                phase += *fm++;
 
             // Set output values
-            *out++ = xout;
+            *out_x++ = xout;
+            *out_y++ = yout;
         }
     }
 
 protected:
     float nPoly = 0.f, P = 0.f;
+    float phase = 0.f, nfreq = 0.f, mul = 0.f;
     float modPhase = 0.f, modPhasePrev = 0.f;
     NPolyQuant nPolyQuant;
 
@@ -233,8 +257,5 @@ protected:
         return val;
     }
 };
-
-using PolygonalOscillator1D = PolygonalOscillator<false>;
-using PolygonalOscillator2D = PolygonalOscillator<true>;
 
 #endif

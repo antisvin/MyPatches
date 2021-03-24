@@ -22,7 +22,7 @@ public:
     }
 
     ~MultiOscillator(){
-        for (int i = 0; i < num_oscillators; i++){
+        for (size_t i = 0; i < num_oscillators; i++){
             delete oscillators[i];
         }
         delete[] oscillators;
@@ -31,7 +31,7 @@ public:
         setPhase(0.0f);
     }
     void setSampleRate(float sr) override {
-        for (int i = 0; i < num_oscillators; i++){
+        for (size_t i = 0; i < num_oscillators; i++){
             oscillators[i]->setSampleRate(sr);
         }
         mul = 1.0f / sr;
@@ -40,7 +40,7 @@ public:
         return 1.0f / mul;
     }
     void setFrequency(float freq) override {
-        for (int i = 0; i < num_oscillators; i++){
+        for (size_t i = 0; i < num_oscillators; i++){
             oscillators[i]->setFrequency(freq);
         }
         nfreq = mul * freq;
@@ -49,7 +49,7 @@ public:
         return nfreq / mul;
     }
     void setPhase(float phase) override {
-        for (int i = 0; i < num_oscillators; i++){
+        for (size_t i = 0; i < num_oscillators; i++){
             oscillators[i]->setPhase(phase);
         }         
         this->phase = phase / (M_PI * 2.0);
@@ -86,7 +86,7 @@ public:
         while (phase >= 1.0) {
             phase -= 1.0;
         }
-        for (int i = 0; i < output.getSize(); i++){
+        for (size_t i = 0; i < output.getSize(); i++){
             output[i] = generate();
         }
     }

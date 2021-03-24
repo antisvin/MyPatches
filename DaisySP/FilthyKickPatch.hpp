@@ -57,7 +57,7 @@ public:
 
         // First, update all parameters
         float tone = getParameterValue(PARAMETER_A);
-        drum.SetFreq(40.0f * fast_exp2f(tone) * 0.5);
+        drum.SetFreq(40.0f * fast_exp2f(tone));
         drum.SetTone(0.2 + tone * 0.5);
         drum.SetDecay(getParameterValue(PARAMETER_E));
         drum.SetDirtiness(getParameterValue(PARAMETER_AA));
