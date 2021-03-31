@@ -4,6 +4,8 @@
 #include "Oscillators/PolygonalOscillator.hpp"
 #include "Oscillators/MultiOscillator.hpp"
 #include "SineOscillator.h"
+#include "Oscillators/SquareOscillator.hpp"
+#include "Oscillators/TriangleOscillator.hpp"
 #include "VoltsPerOctave.h"
 #include "DelayLine.hpp"
 #include "QuadraturePhaser.hpp"
@@ -46,16 +48,22 @@ struct Point {
 class ModOscillator : public MultiOscillator {
 public:
     ModOscillator(float freq, float sr = 48000)
-        : MultiOscillator(3, freq, sr)
+        : MultiOscillator(5, freq, sr)
+        , osc0(freq, sr / 2)
         , osc1(freq, sr / 2)
         , osc2(freq, sr)
-        , osc3(freq, sr / 3) {
+        , osc3(freq, sr * 2)
+        , osc4(freq, sr * 2) {
+        addOscillator(&osc0);
         addOscillator(&osc1);
         addOscillator(&osc2);
         addOscillator(&osc3);
+        addOscillator(&osc4);
     }
 private:
+    SquareOscillator osc0;
     SineOscillator osc1, osc2, osc3;
+    TriangleOscillator osc4;
 };
 
 class PolygonalLichPatch : public Patch {
@@ -195,7 +203,7 @@ public:
         setParameterValue(PARAMETER_G, attr_y * 0.5 + 0.5);
         //setParameterValue(PARAMETER_G, atan2f(attr_y, attr_x) / M_PI / 2.0);
 
-        hz.setTune(-3.0 + getParameterValue(PARAMETER_A) * 4.0);
+        hz.setTune(-4.0 + getParameterValue(PARAMETER_A) * 4.0);
         FloatArray left = buffer.getSamples(LEFT_CHANNEL);
         FloatArray right = buffer.getSamples(RIGHT_CHANNEL);
 

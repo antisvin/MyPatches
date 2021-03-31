@@ -1,7 +1,7 @@
 #ifndef __SQUARE_OSCILLATOR_HPP__
 #define __SQUARE_OSCILLATOR_HPP__
 
-#include "Oscillator.h"
+#include "BandlimitedOscillator.hpp"
 
 class SquareOscillator : public PWBandlimitedOscillator {
 public:

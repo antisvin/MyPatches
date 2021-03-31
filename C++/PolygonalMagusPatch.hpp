@@ -1,9 +1,11 @@
-#ifndef __POLYGONAL_VCO_PATCH_HPP__
-#define __POLYGONAL_VCO_PATCH_HPP__
+#ifndef __POLYGONAL_MAGUS_PATCH_HPP__
+#define __POLYGONAL_MAGUS_PATCH_HPP__
 
 #include "MonochromeScreenPatch.h"
 #include "Oscillators/PolygonalOscillator.hpp"
 #include "Oscillators/MultiOscillator.hpp"
+#include "Oscillators/SquareOscillator.hpp"
+#include "Oscillators/TriangleOscillator.hpp"
 #include "SineOscillator.h"
 #include "VoltsPerOctave.h"
 #include "DelayLine.hpp"
@@ -20,7 +22,7 @@
 #define FM_AMOUNT_MULT (1.f / MAX_FM_AMOUNT)
 #define SCREEN_OFFSET(x) ((x)*SCREEN_WIDTH / 4 - int(SCREEN_WIDTH / 16))
 
-//#define OVERSAMPLE_FACTOR 4
+//#define OVERSAMPLE_FACTOR 2
 
 struct Point {
     float x, y;
@@ -42,20 +44,25 @@ struct Point {
 class ModOscillator : public MultiOscillator {
 public:
     ModOscillator(float freq, float sr = 48000)
-        : MultiOscillator(3, freq, sr)
+        : MultiOscillator(5, freq, sr)
+        , osc0(freq, sr / 2)
         , osc1(freq, sr / 2)
         , osc2(freq, sr)
-        , osc3(freq, sr / 3) {
+        , osc3(freq, sr * 2)
+        , osc4(freq, sr * 2) {
+        addOscillator(&osc0);
         addOscillator(&osc1);
         addOscillator(&osc2);
         addOscillator(&osc3);
+        addOscillator(&osc4);
     }
-
 private:
+    SquareOscillator osc0;
     SineOscillator osc1, osc2, osc3;
+    TriangleOscillator osc4;
 };
 
-class PolygonalVCOPatch : public MonochromeScreenPatch {
+class PolygonalMagusPatch : public MonochromeScreenPatch {
 private:
     PolygonalOscillator osc;
     PolygonalOscillator osc_preview;
@@ -76,7 +83,7 @@ private:
     DelayLine<Point, 128> preview_buf;
 
 public:
-    PolygonalVCOPatch()
+    PolygonalMagusPatch()
         : hz(true)
 #ifdef OVERSAMPLE_FACTOR
         , osc(BASE_FREQ, getSampleRate() * OVERSAMPLE_FACTOR)
@@ -89,14 +96,14 @@ public:
         , mod_preview(PREVIEW_FREQ, float(SCREEN_WIDTH / 2)) {
         registerParameter(PARAMETER_A, "Tune");
         registerParameter(PARAMETER_B, "Quantize");
-        registerParameter(PARAMETER_C, "NPoly");
-        registerParameter(PARAMETER_D, "Teeth");
-        registerParameter(PARAMETER_E, "FM Amount");
-        setParameterValue(PARAMETER_E, 0.0);
-        registerParameter(PARAMETER_F, "FM Mod Shape");
-        setParameterValue(PARAMETER_F, 0.0);
-        registerParameter(PARAMETER_G, "Ext FM Amount");
-        setParameterValue(PARAMETER_G, 0.0);
+        registerParameter(PARAMETER_AA, "NPoly");
+        registerParameter(PARAMETER_AB, "Teeth");
+        registerParameter(PARAMETER_C, "FM Amount");
+        setParameterValue(PARAMETER_C, 0.0);
+        registerParameter(PARAMETER_D, "FM Mod Shape");
+        setParameterValue(PARAMETER_D, 0.0);
+        registerParameter(PARAMETER_AC, "Ext FM Amt");
+        setParameterValue(PARAMETER_AC, 0.0);
         preview = FloatArray::create(SCREEN_PREVIEW_BUF_SIZE);
         preview_buf = DelayLine<Point, 128>::create();
 #ifdef OVERSAMPLE_FACTOR
@@ -108,7 +115,7 @@ public:
 #endif
     }
 
-    ~PolygonalVCOPatch() {
+    ~PolygonalMagusPatch() {
         FloatArray::destroy(preview);
         DelayLine<Point, 128>::destroy(preview_buf);
 #ifdef OVERSAMPLE_FACTOR
@@ -146,14 +153,14 @@ public:
         FloatArray left = buffer.getSamples(LEFT_CHANNEL);
         FloatArray right = buffer.getSamples(RIGHT_CHANNEL);
 
-        fm_amount = getParameterValue(PARAMETER_E);
-        fm_ratio = getParameterValue(PARAMETER_F);
-        float ext_fm_amt = getParameterValue(PARAMETER_G);
+        fm_amount = getParameterValue(PARAMETER_C);
+        fm_ratio = getParameterValue(PARAMETER_D);
+        float ext_fm_amt = getParameterValue(PARAMETER_AC);
     
         osc.setParams(
             updateQuant(getParameterValue(PARAMETER_B)),
-            getParameterValue(PARAMETER_C),
-            getParameterValue(PARAMETER_D));
+            getParameterValue(PARAMETER_AA),
+            getParameterValue(PARAMETER_AB));
 
         // Carrier / modulator frequency
         float freq = hz.getFrequency(left[0]);
