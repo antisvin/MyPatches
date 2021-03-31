@@ -11,8 +11,6 @@
  */
 class QuadratureOscillator : public MultiSignalGenerator {
 public:
-    QuadratureOscillator(float sr=48000) {
-    }
     virtual ~QuadratureOscillator() {
     }
     using MultiSignalGenerator::generate;

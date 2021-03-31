@@ -15,28 +15,30 @@ public:
         , phase(0.0f) {
         setFrequency(freq);
     }
-    void reset() override {
+    void reset() {
         phase = 0.0f;
     }
-    void setSampleRate(float sr) override {
-        mul = 1.0f / sr;
+    void setSampleRate(float sr) {
+        float freq = getFrequency();
+        mul = 2 * M_PI / sr;
+        setFrequency(freq);
     }
-    float getSampleRate() override {
-        return 1.0f / mul;
+    float getSampleRate() {
+        return (2 * M_PI) / mul;
     }
-    void setFrequency(float freq) override {
-        nfreq = mul * freq;
+    void setFrequency(float freq) {
+        incr = freq * mul;
     }
-    float getFrequency() override {
-        return nfreq / mul;
+    float getFrequency() {
+        return incr / mul;
     }
-    void setPhase(float phase) override {
-        this->phase = phase;
+    void setPhase(float ph) {
+        phase = ph;
     }
-    float getPhase() override {
+    float getPhase() {
         return phase;
     }
-    ComplexFloat generate() override {
+    ComplexFloat generate() {
         ComplexFloat sample { sinf(phase), cos(phase) };
         phase += incr;
         if (phase >= 2 * M_PI)
@@ -46,12 +48,13 @@ public:
     void generate(AudioBuffer& output) override {
         size_t len = output.getSize();
         // Real channel
-        float* out = output[0];
+        float* out = output.getSamples(0).getData();
         for (size_t i = 0; i < len; ++i) {
             *out++ = sinf(phase);
             phase += incr; // allow phase to overrun
         }
         // Imaginary channel. Pointer to output is already in place
+        out = output.getSamples(1).getData();
         for (size_t i = 0; i < len; ++i) {
             *out++ = cosf(phase);
             phase += incr; // allow phase to overrun
@@ -68,7 +71,7 @@ public:
 
 protected:
     float mul;
-    float nfreq;
+    float incr;
     float phase;
 };
 

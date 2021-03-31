@@ -20,8 +20,7 @@ public:
         NUM_NPOLYQUANT,
     };
     PolygonalOscillator(float sr = 48000)
-        : QuadratureOscillator(sr)
-        , mul(1.0 / sr)
+        : mul(1.0 / sr)
         , nfreq(0.0)
         , phase(0)
         , nPolyQuant(NONE) {
@@ -101,7 +100,6 @@ public:
         render<true>(
             output.getSize(), fm.getData(), output.getSamples(0).getData(), output.getSamples(1).getData());
     }
-
 protected:
     template<bool with_fm>
     void render(size_t size, float* fm, float* out_x, float* out_y) {
