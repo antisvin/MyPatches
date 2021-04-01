@@ -1,11 +1,11 @@
 #ifndef __POLYGONAL_LICH_PATCH_HPP__
 #define __POLYGONAL_LICH_PATCH_HPP__
 
-#include "Oscillators/PolygonalOscillator.hpp"
-#include "Oscillators/MultiOscillator.hpp"
+#include "PolygonalOscillator.hpp"
+#include "MultiOscillator.hpp"
 #include "SineOscillator.h"
-#include "Oscillators/SquareOscillator.hpp"
-#include "Oscillators/TriangleOscillator.hpp"
+#include "SquareOscillator.hpp"
+#include "TriangleOscillator.hpp"
 #include "VoltsPerOctave.h"
 #include "DelayLine.hpp"
 #include "QuadraturePhaser.hpp"
@@ -75,8 +75,10 @@ private:
     float attr_x = 0.0, attr_y = 0.0;
 //    float attr_a = 1.641, attr_b = 1.902;
 //    float attr_c = 0.316, attr_d = 1.525;
-    float attr_a = -0.827, attr_b = -1.637;
-    float attr_c = 1.659, attr_d = -0.943;
+    const float attr_a = -0.827;
+    const float attr_b = -1.637;
+    const float attr_c = 1.659;
+    const float attr_d = -0.943;
 //    float attr_a = 2.75, attr_b = 0.2;
 
     inline float crossfade(float a, float b, float fade) {
@@ -188,10 +190,6 @@ public:
     }
 
     void processAttractor(float chaos) {
-        //float t = attr_y;
-        //attr_y = -attr_b * attr_x + attr_a * attr_y - attr_y * attr_y * attr_y;
-        //attr_x = t;
-        //float lfo = 1.0 / getSampleRate();
         float old_x = attr_x * chaos, old_y = attr_y * chaos;
         attr_x = sin(attr_a * old_y) - cos(attr_b * old_x);
         attr_y = sin(attr_c * old_x) - cos(attr_d * old_y);

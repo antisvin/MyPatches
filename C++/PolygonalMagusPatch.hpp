@@ -2,11 +2,12 @@
 #define __POLYGONAL_MAGUS_PATCH_HPP__
 
 #include "MonochromeScreenPatch.h"
-#include "Oscillators/PolygonalOscillator.hpp"
-#include "Oscillators/MultiOscillator.hpp"
-#include "Oscillators/SquareOscillator.hpp"
-#include "Oscillators/TriangleOscillator.hpp"
+#include "PolygonalOscillator.hpp"
+#include "MultiOscillator.hpp"
+#include "SquareOscillator.hpp"
+#include "TriangleOscillator.hpp"
 #include "SineOscillator.h"
+#include "QuadratureSineOscillator.hpp"
 #include "VoltsPerOctave.h"
 #include "DelayLine.hpp"
 #include "Resample.h"
@@ -20,7 +21,7 @@
 #define SCREEN_PREVIEW_BUF_SIZE (SCREEN_WIDTH / 2 + SCREEN_BUF_OVERLAP)
 #define MAX_FM_AMOUNT 0.2f
 #define FM_AMOUNT_MULT (1.f / MAX_FM_AMOUNT)
-#define SCREEN_OFFSET(x) ((x)*SCREEN_WIDTH / 4 - int(SCREEN_WIDTH / 16))
+#define SCREEN_OFFSET(x) ((x)*SCREEN_WIDTH / 4 )
 
 //#define OVERSAMPLE_FACTOR 2
 
@@ -65,10 +66,16 @@ private:
 class PolygonalMagusPatch : public MonochromeScreenPatch {
 private:
     PolygonalOscillator osc;
-    PolygonalOscillator osc_preview;
     ModOscillator mod;
     ModOscillator mod_preview;
+    FloatArray lfo_preview;
     PolygonalOscillator::NPolyQuant quant;
+    float attr_x, attr_y;
+    const float attr_a = -0.827;
+    const float attr_b = -1.637;
+    const float attr_c = 1.659;
+    const float attr_d = -0.943;    
+    QuadratureSineOscillator mod_lfo;
 #ifdef OVERSAMPLE_FACTOR
     UpSampler* upsampler_pitch;
     UpSampler* upsampler_fm;
@@ -81,10 +88,16 @@ private:
     float fm_amount;
     VoltsPerOctave hz;
     DelayLine<Point, 128> preview_buf;
+    DelayLine<Point, 128> lfo_preview_buf;
+
+    inline float crossfade(float a, float b, float fade) {
+        return a * fade + b * (1 - fade);
+    }
 
 public:
     PolygonalMagusPatch()
         : hz(true)
+        , mod_lfo(BASE_FREQ, getSampleRate() / getBlockSize())
 #ifdef OVERSAMPLE_FACTOR
         , osc(BASE_FREQ, getSampleRate() * OVERSAMPLE_FACTOR)
         , mod(BASE_FREQ, getSampleRate() * OVERSAMPLE_FACTOR)
@@ -92,20 +105,35 @@ public:
         , osc(BASE_FREQ, getSampleRate())
         , mod(BASE_FREQ, getSampleRate())
 #endif
-        , osc_preview(1.0f, float(SCREEN_WIDTH / 2))
-        , mod_preview(PREVIEW_FREQ, float(SCREEN_WIDTH / 2)) {
+        , mod_preview(PREVIEW_FREQ, float(SCREEN_WIDTH * 3 / 8)) {
+        // Polygonal VCO
         registerParameter(PARAMETER_A, "Tune");
         registerParameter(PARAMETER_B, "Quantize");
         registerParameter(PARAMETER_AA, "NPoly");
         registerParameter(PARAMETER_AB, "Teeth");
+        // FM / env
         registerParameter(PARAMETER_C, "FM Amount");
         setParameterValue(PARAMETER_C, 0.0);
         registerParameter(PARAMETER_D, "FM Mod Shape");
         setParameterValue(PARAMETER_D, 0.0);
         registerParameter(PARAMETER_AC, "Ext FM Amt");
         setParameterValue(PARAMETER_AC, 0.0);
+        registerParameter(PARAMETER_AD, "Ext Env");
+        setParameterValue(PARAMETER_AD, 1.0);
+        // Chaotic modulator
+        registerParameter(PARAMETER_G, "LFO freq");
+        setParameterValue(PARAMETER_AD, 0.1);
+        registerParameter(PARAMETER_H, "ModX>");
+        registerParameter(PARAMETER_AG, "Chaos Amt");
+        registerParameter(PARAMETER_AH, "ModY>");
+        // Separate modulator outputs        
+        registerParameter(PARAMETER_BA, "LfoX>");
+        registerParameter(PARAMETER_BB, "LfoY>");
+        registerParameter(PARAMETER_BC, "AttrX>");
+        registerParameter(PARAMETER_BD, "AttrY>");
         preview = FloatArray::create(SCREEN_PREVIEW_BUF_SIZE);
         preview_buf = DelayLine<Point, 128>::create();
+        lfo_preview_buf = DelayLine<Point, 128>::create();
 #ifdef OVERSAMPLE_FACTOR
         upsampler_pitch = UpSampler::create(1, OVERSAMPLE_FACTOR);
         upsampler_fm = UpSampler::create(1, OVERSAMPLE_FACTOR);
@@ -118,6 +146,7 @@ public:
     ~PolygonalMagusPatch() {
         FloatArray::destroy(preview);
         DelayLine<Point, 128>::destroy(preview_buf);
+        DelayLine<Point, 128>::destroy(lfo_preview_buf);
 #ifdef OVERSAMPLE_FACTOR
         UpSampler::destroy(upsampler_pitch);
         UpSampler::destroy(upsampler_fm);
@@ -135,20 +164,52 @@ public:
         float mod_prev = height_offset;
         mod_preview.reset();
         mod_preview.setMorph(fm_ratio);
-        for (int i = 0; i < SCREEN_WIDTH / 2; i++) {
+        // Render oscillator, modulator and chaotic LFO
+        for (int i = 0; i < SCREEN_WIDTH * 3 / 8; i++) {
             // Mod VCO preview
             float mod_sample = mod_preview.generate() * fm_amount;
             float mod_new = (mod_sample + 1.0) * height_offset;
-            screen.drawVerticalLine(SCREEN_WIDTH / 2 + i, std::min(mod_prev, mod_new),
+            screen.drawHorizontalLine(SCREEN_WIDTH * 3 / 8 + std::min(mod_prev, mod_new) - 3, i, 
                 std::max(1.0, abs(mod_new - mod_prev)), WHITE);
             mod_prev = mod_new;
 
-            Point p = preview_buf.read(float(i) * 64.0 / 50.0);
-            screen.setPixel(SCREEN_OFFSET(p.x + 1.0), SCREEN_OFFSET(p.y + 1), WHITE);
+            Point p = preview_buf.read(float(i) * 64.0 / 50);
+            screen.setPixel(
+                (p.x + 0.95) * SCREEN_WIDTH / 4,
+                (p.y + 0.75) * SCREEN_WIDTH / 4 ,
+                WHITE);
+
+            p = lfo_preview_buf.read(float(i) * 64.0 / 50);
+            screen.setPixel(
+                SCREEN_WIDTH * 3 / 8 + (p.x + 1) * SCREEN_WIDTH / 4,
+                (p.y + 0.25) * SCREEN_WIDTH / 4 ,
+                WHITE);
         }
         FloatArray::copy(preview, preview + SCREEN_WIDTH / 2, SCREEN_BUF_OVERLAP);
     }
+
+    void processAttractor(float chaos) {
+        float old_x = attr_x, old_y = attr_y;
+        attr_x = sin(attr_a * old_y) - cos(attr_b * old_x);
+        attr_y = sin(attr_c * old_x) - cos(attr_d * old_y);
+        auto lfo = mod_lfo.generate();
+        setParameterValue(PARAMETER_BA, lfo.re * 0.5 + 0.5);
+        setParameterValue(PARAMETER_BB, lfo.im * 0.5 + 0.5);
+        setParameterValue(PARAMETER_BC, attr_x * 0.5 + 0.5);
+        setParameterValue(PARAMETER_BD, attr_y * 0.5 + 0.5);
+        Point lfo_pt(
+            crossfade(attr_x * 0.5, lfo.re, chaos) * 0.5 + 0.5,
+            crossfade(attr_y * 0.5, lfo.im, chaos) * 0.5 + 0.5);
+        lfo_preview_buf.write(lfo_pt);
+        setParameterValue(PARAMETER_H, lfo_pt.x);
+        setParameterValue(PARAMETER_AH, lfo_pt.y);
+    }
+
     void processAudio(AudioBuffer& buffer) {
+        // Attractor/lfo CV output
+        mod_lfo.setFrequency(0.01 + getParameterValue(PARAMETER_G) * 4.99);
+        processAttractor(getParameterValue(PARAMETER_AG));
+
         hz.setTune(-3.0 + getParameterValue(PARAMETER_A) * 4.0);
         FloatArray left = buffer.getSamples(LEFT_CHANNEL);
         FloatArray right = buffer.getSamples(RIGHT_CHANNEL);
@@ -192,6 +253,9 @@ public:
         downsampler_left->process(audio_buf.getSamples(0), left);
         downsampler_right->process(audio_buf.getSamples(1), right);
 #endif
+        float env = getParameterValue(PARAMETER_AD);
+        left.multiply(env);
+        right.multiply(env);
     }
 
     PolygonalOscillator::NPolyQuant updateQuant(float val) {
