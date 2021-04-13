@@ -11,7 +11,6 @@
 #include "VoltsPerOctave.h"
 #include "DelayLine.hpp"
 #include "Resample.h"
-#include <algorithm>
 
 #define BASE_FREQ 55.f
 #define MAX_POLY 20.f
@@ -21,7 +20,9 @@
 #define SCREEN_PREVIEW_BUF_SIZE (SCREEN_WIDTH / 2 + SCREEN_BUF_OVERLAP)
 #define MAX_FM_AMOUNT 0.2f
 #define FM_AMOUNT_MULT (1.f / MAX_FM_AMOUNT)
-#define SCREEN_OFFSET(x) ((x)*SCREEN_WIDTH / 4 )
+#define SCREEN_OFFSET(x) ((x)*SCREEN_WIDTH / 4)
+#define MAX_DELAY (64 * 1024)
+#define MAX_FEEDBACK 0.7
 
 //#define OVERSAMPLE_FACTOR 2
 
@@ -57,6 +58,7 @@ public:
         addOscillator(&osc3);
         addOscillator(&osc4);
     }
+
 private:
     SquareOscillator osc0;
     SineOscillator osc1, osc2, osc3;
@@ -74,7 +76,7 @@ private:
     const float attr_a = -0.827;
     const float attr_b = -1.637;
     const float attr_c = 1.659;
-    const float attr_d = -0.943;    
+    const float attr_d = -0.943;
     QuadratureSineOscillator mod_lfo;
 #ifdef OVERSAMPLE_FACTOR
     UpSampler* upsampler_pitch;
@@ -84,12 +86,16 @@ private:
     AudioBuffer* oversample_buf;
 #endif
     FloatArray preview;
+    FloatArray env_copy;
     float fm_ratio;
     float fm_amount;
     VoltsPerOctave hz;
     DelayLine<Point, 128> preview_buf;
     DelayLine<Point, 128> lfo_preview_buf;
-
+    DelayLine<float, MAX_DELAY> delayBufferL, delayBufferR;
+    StereoBiquadFilter* highpass;
+    StereoBiquadFilter* lowpass;
+    int delayL, delayR;    
     inline float crossfade(float a, float b, float fade) {
         return a * fade + b * (1 - fade);
     }
@@ -120,13 +126,22 @@ public:
         setParameterValue(PARAMETER_AC, 0.0);
         registerParameter(PARAMETER_AD, "Ext Env");
         setParameterValue(PARAMETER_AD, 1.0);
+        // Delay
+        registerParameter(PARAMETER_E, "Ping");
+        setParameterValue(PARAMETER_E, 0.5);
+        registerParameter(PARAMETER_F, "Pong");
+        setParameterValue(PARAMETER_F, 0.5);
+        registerParameter(PARAMETER_AE, "Feedback");
+        setParameterValue(PARAMETER_AE, 0.5);
+        registerParameter(PARAMETER_AF, "Dry / wet");
+        setParameterValue(PARAMETER_AF, 0.5);
         // Chaotic modulator
         registerParameter(PARAMETER_G, "LFO freq");
         setParameterValue(PARAMETER_AD, 0.1);
         registerParameter(PARAMETER_H, "ModX>");
         registerParameter(PARAMETER_AG, "Chaos Amt");
         registerParameter(PARAMETER_AH, "ModY>");
-        // Separate modulator outputs        
+        // Separate modulator outputs
         registerParameter(PARAMETER_BA, "LfoX>");
         registerParameter(PARAMETER_BB, "LfoY>");
         registerParameter(PARAMETER_BC, "AttrX>");
@@ -134,6 +149,9 @@ public:
         preview = FloatArray::create(SCREEN_PREVIEW_BUF_SIZE);
         preview_buf = DelayLine<Point, 128>::create();
         lfo_preview_buf = DelayLine<Point, 128>::create();
+        env_copy = FloatArray::create(getBlockSize());
+        delayBufferL = DelayLine<float, MAX_DELAY>::create();
+        delayBufferR = DelayLine<float, MAX_DELAY>::create();        
 #ifdef OVERSAMPLE_FACTOR
         upsampler_pitch = UpSampler::create(1, OVERSAMPLE_FACTOR);
         upsampler_fm = UpSampler::create(1, OVERSAMPLE_FACTOR);
@@ -141,12 +159,22 @@ public:
         downsampler_right = DownSampler::create(1, OVERSAMPLE_FACTOR);
         oversample_buf = AudioBuffer::create(2, getBlockSize() * OVERSAMPLE_FACTOR);
 #endif
+        highpass = StereoBiquadFilter::create(1);
+        highpass->setHighPass(40 / (getSampleRate() / 2),
+            FilterStage::BUTTERWORTH_Q); // dc filter
+        lowpass = StereoBiquadFilter::create(1);
+        lowpass->setLowPass(8000 / (getSampleRate() / 2), FilterStage::BUTTERWORTH_Q);
     }
 
     ~PolygonalMagusPatch() {
         FloatArray::destroy(preview);
         DelayLine<Point, 128>::destroy(preview_buf);
         DelayLine<Point, 128>::destroy(lfo_preview_buf);
+        FloatArray::destroy(env_copy);
+        DelayLine<float, MAX_DELAY>::destroy(delayBufferL);
+        DelayLine<float, MAX_DELAY>::destroy(delayBufferR);
+        StereoBiquadFilter::destroy(highpass);
+        StereoBiquadFilter::destroy(lowpass);
 #ifdef OVERSAMPLE_FACTOR
         UpSampler::destroy(upsampler_pitch);
         UpSampler::destroy(upsampler_fm);
@@ -169,21 +197,17 @@ public:
             // Mod VCO preview
             float mod_sample = mod_preview.generate() * fm_amount;
             float mod_new = (mod_sample + 1.0) * height_offset;
-            screen.drawHorizontalLine(SCREEN_WIDTH * 3 / 8 + std::min(mod_prev, mod_new) - 3, i, 
-                std::max(1.0, abs(mod_new - mod_prev)), WHITE);
+            screen.drawHorizontalLine(SCREEN_WIDTH * 3 / 8 + min(mod_prev, mod_new) - 3,
+                i, max(1.0, abs(mod_new - mod_prev)), WHITE);
             mod_prev = mod_new;
 
             Point p = preview_buf.read(float(i) * 64.0 / 50);
-            screen.setPixel(
-                (p.x + 0.95) * SCREEN_WIDTH / 4,
-                (p.y + 0.75) * SCREEN_WIDTH / 4 ,
-                WHITE);
+            screen.setPixel((p.x + 0.95) * SCREEN_WIDTH / 4,
+                (p.y + 0.75) * SCREEN_WIDTH / 4, WHITE);
 
             p = lfo_preview_buf.read(float(i) * 64.0 / 50);
-            screen.setPixel(
-                SCREEN_WIDTH * 3 / 8 + (p.x + 1) * SCREEN_WIDTH / 4,
-                (p.y + 0.25) * SCREEN_WIDTH / 4 ,
-                WHITE);
+            screen.setPixel(SCREEN_WIDTH * 3 / 8 + (p.x + 1) * SCREEN_WIDTH / 4,
+                (p.y + 0.25) * SCREEN_WIDTH / 4, WHITE);
         }
         FloatArray::copy(preview, preview + SCREEN_WIDTH / 2, SCREEN_BUF_OVERLAP);
     }
@@ -197,8 +221,7 @@ public:
         setParameterValue(PARAMETER_BB, lfo.im * 0.5 + 0.5);
         setParameterValue(PARAMETER_BC, attr_x * 0.5 + 0.5);
         setParameterValue(PARAMETER_BD, attr_y * 0.5 + 0.5);
-        Point lfo_pt(
-            crossfade(attr_x * 0.5, lfo.re, chaos) * 0.5 + 0.5,
+        Point lfo_pt(crossfade(attr_x * 0.5, lfo.re, chaos) * 0.5 + 0.5,
             crossfade(attr_y * 0.5, lfo.im, chaos) * 0.5 + 0.5);
         lfo_preview_buf.write(lfo_pt);
         setParameterValue(PARAMETER_H, lfo_pt.x);
@@ -213,15 +236,14 @@ public:
         hz.setTune(-3.0 + getParameterValue(PARAMETER_A) * 4.0);
         FloatArray left = buffer.getSamples(LEFT_CHANNEL);
         FloatArray right = buffer.getSamples(RIGHT_CHANNEL);
+        env_copy.copyFrom(right);
 
         fm_amount = getParameterValue(PARAMETER_C);
         fm_ratio = getParameterValue(PARAMETER_D);
         float ext_fm_amt = getParameterValue(PARAMETER_AC);
-    
-        osc.setParams(
-            updateQuant(getParameterValue(PARAMETER_B)),
-            getParameterValue(PARAMETER_AA),
-            getParameterValue(PARAMETER_AB));
+
+        osc.setParams(updateQuant(getParameterValue(PARAMETER_B)),
+            getParameterValue(PARAMETER_AA), getParameterValue(PARAMETER_AB));
 
         // Carrier / modulator frequency
         float freq = hz.getFrequency(left[0]);
@@ -247,15 +269,50 @@ public:
 
         // Generate quadrature output
         osc.generate(audio_buf, audio_buf.getSamples(1));
-        preview_buf.write(Point(audio_buf.getSamples(0)[0], audio_buf.getSamples(1)[0]));
+        preview_buf.write(
+            Point(audio_buf.getSamples(0)[0], audio_buf.getSamples(1)[0]));
 
 #ifdef OVERSAMPLE_FACTOR
         downsampler_left->process(audio_buf.getSamples(0), left);
         downsampler_right->process(audio_buf.getSamples(1), right);
 #endif
         float env = getParameterValue(PARAMETER_AD);
-        left.multiply(env);
-        right.multiply(env);
+        if (env >= 0.5) {
+            env_copy.multiply(env * 2.0 - 1.0);
+            left.multiply(env_copy);
+            right.multiply(env_copy);
+        }
+        else {
+            left.multiply(1.0 - 2.0 * env);
+            right.multiply(1.0 - 2.0 * env);
+        }
+
+        float ping = 0.01 + 0.99 * getParameterValue(PARAMETER_E);
+        float pong = 0.01 + 0.99 * getParameterValue(PARAMETER_E);
+        float feedback = getParameterValue(PARAMETER_AE);
+        int newDelayL = ping * (delayBufferL.getSize() - 1);
+        int newDelayR = pong * (delayBufferR.getSize() - 1);
+        float wet = getParameterValue(PARAMETER_AF);
+        float dry = 1.0 - wet;
+        highpass->process(buffer, buffer);        
+        auto size = buffer.getSize();
+        left.multiply(0.5);
+        right.multiply(0.5);
+        for (auto n = 0; n < size; n++) {
+            float x1 = n / (float)size;
+            float x0 = 1 - x1;
+            float ldly =
+                delayBufferL.read(delayL) * x0 + delayBufferL.read(newDelayL) * x1;
+            float rdly =
+                delayBufferR.read(delayR) * x0 + delayBufferR.read(newDelayR) * x1;
+            delayBufferL.write(feedback * rdly + left[n]);
+            delayBufferR.write(feedback * ldly + right[n]);
+            left[n] = ldly * wet + left[n] * dry;
+            right[n] = rdly * wet + right[n] * dry;
+        }
+        lowpass->process(buffer, buffer);
+        delayL = newDelayL;
+        delayR = newDelayR;        
     }
 
     PolygonalOscillator::NPolyQuant updateQuant(float val) {

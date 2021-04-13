@@ -1,11 +1,11 @@
 #ifndef __DelayLine_hpp__
 #define __DelayLine_hpp__
 
-#undef min
-#undef max
-#undef abs
-#undef rand
-#include <algorithm>
+//#undef min
+//#undef max
+//#undef abs
+//#undef rand
+//#include <algorithm>
 
 template <typename T, unsigned int max_delay>
 class DelayLine {

@@ -206,9 +206,11 @@ public:
         FloatArray right = buffer.getSamples(RIGHT_CHANNEL);
 
 #ifndef EXT_FM
-        env_copy.copyFrom(right);
         float ext_env_amt = getParameterValue(PARAMETER_AC);
-        env_copy.multiply(ext_env_amt);
+        if (ext_env_amt >= 0.5) {
+            env_copy.copyFrom(right);
+            env_copy.multiply(ext_env_amt * 2 - 1.0);
+        }
 #endif
         // Update params in FM settings
         if (isModeA) {
@@ -268,8 +270,14 @@ public:
         downsampler_right->process(oversample_buf->getSamples(1), right);
 #endif
 #ifndef EXT_FM
-        left.multiply(env_copy);
-        right.multiply(env_copy);
+        if (ext_env_amt >= 0.5) {
+            left.multiply(env_copy);
+            right.multiply(env_copy);
+        }
+        else {
+            left.multiply(ext_env_amt * 2);
+            right.multiply(ext_env_amt * 2);
+        }
 #endif
     }
 
