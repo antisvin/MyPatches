@@ -91,8 +91,8 @@ public:
         }
     }
     float generate(float fm) override {        
-        float sample_a = oscillators[morph_idx]->generate();
-        float sample_b = oscillators[morph_idx + 1]->generate();
+        float sample_a = oscillators[morph_idx]->generate(fm);
+        float sample_b = oscillators[morph_idx + 1]->generate(fm);
         phase += fm;
         phase += nfreq;
         while (phase >= 1.0) {

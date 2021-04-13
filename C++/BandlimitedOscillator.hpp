@@ -2,7 +2,7 @@
 #define __BANDLIMITED_OSCILLATOR_HPP__
 
 #include "Oscillator.h"
-#include "polyblep/dsp/polyblep.h"
+#include "polyblep.h"
 
 
 class BandlimitedOscillator : public Oscillator {

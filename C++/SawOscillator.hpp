@@ -6,49 +6,49 @@
 class SawOscillator : public BandlimitedOscillator {
 public:
     SawOscillator(float sr = 48000)
-        : BandlimitedOscillator(sr)
-        , next_sample(0.0) {
+        : BandlimitedOscillator(sr) {
     }
     SawOscillator(float freq, float sr)
-        : BandlimitedOscillator(freq, sr)
-        , next_sample(0.0) {
+        : BandlimitedOscillator(freq, sr) {
     }
 protected:
-    void render(size_t size, float* out) {
-        size_t size = output.getSize();
-        float* out = output.getData();
-        bool reset = false;
-
+    void render(size_t size, float* out) override {
         while (size--) {
             float this_sample = next_sample;
             next_sample = 0.0f;
 
-            phase += incr;
-            float ph_norm = phase / M_PI / 2.0;
-            while (!reset) {
-                if (ph_norm < 1.0)
-                    break;
-                phase -= M_PI * 2.0;
-                ph_norm -= 1.0;
-                float t = ph_norm / incr;
+            phase += nfreq;
+
+            // Handle negative frequencies for TZFM
+            while (phase < 0.0) {
+                phase += 1.0;
+            }
+
+            if (!high) {
+                float t = 1.0 - phase / nfreq;
+                high = true;
+                this_sample += stmlib::ThisBlepSample(t);
+                next_sample += stmlib::NextBlepSample(t);                
+            }
+            if (phase >= 1.0) {
+                phase -= 1.0;
+                float t = phase / nfreq;
                 this_sample -= stmlib::ThisBlepSample(t);
                 next_sample -= stmlib::NextBlepSample(t);
+                high = false;
             }
-            next_sample += renderNaive(ph_norm);
+
+            next_sample += renderNaive();
 
             *out++ = (2.0f * this_sample - 1.0f);
         }
     }
 
-    float mul;
-    float phase;
-    float incr;
-    float nfreq;
-    float next_sample;
-    bool high;
+    float next_sample = 0.0;
+    bool high = false;
 
-    inline float renderNaive(float ph_norm){
-        return ph_norm;
+    inline float renderNaive(){
+        return phase;
     }    
 };
 

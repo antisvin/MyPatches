@@ -7,12 +7,12 @@ class TriangleOscillator : public PWBandlimitedOscillator {
 public:
     TriangleOscillator(float sr = 48000)
         : PWBandlimitedOscillator(sr)
-        , previous_pw(0.0)
+        , previous_pw(0.5)
         , next_sample(0.0) {
     }
-    TriangleOscillator(float freq, float sr = 48000)
+    TriangleOscillator(float freq, float sr)
         : PWBandlimitedOscillator(freq, sr)
-        , previous_pw(0.0)
+        , previous_pw(0.5)
         , next_sample(0.0) {
     }
 
