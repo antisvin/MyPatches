@@ -2,7 +2,7 @@
 #define __QUADRATURE_PHASER_HPP__
 
 #include "SignalProcessor.h"
-#include "Oscillators/QuadratureSineOscillator.hpp"
+#include "QuadratureSineOscillator.hpp"
 
 class QuadraturePhaser : public MultiSignalProcessor {
 private:
