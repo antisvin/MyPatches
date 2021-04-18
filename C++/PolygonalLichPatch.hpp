@@ -9,22 +9,20 @@
 #include "VoltsPerOctave.h"
 #include "DelayLine.hpp"
 #include "QuadraturePhaser.hpp"
-//#include <algorithm>
 
 
 #define BASE_FREQ 55.f
 #define MAX_POLY 20.f
 #define MAX_FM_AMOUNT 0.1f
-#define FM_AMOUNT_MULT (1.f / MAX_FM_AMOUNT)
 
 // Oversampling ends up sounding fairly disappointing
-#define OVERSAMPLE_FACTOR 2
+//#define OVERSAMPLE_FACTOR 2
 
 #ifdef OVERSAMPLE_FACTOR
 #include "Resample.h"
 #endif
 
-//#define EXT_FM
+#define EXT_FM
 
 struct Point {
     Point() = default;
@@ -70,7 +68,7 @@ class PolygonalLichPatch : public Patch {
 private:
     PolygonalOscillator osc;
     ModOscillator mod;
-    QuadratureSineOscillator mod_lfo;
+    SineOscillator mod_lfo;
     PolygonalOscillator::NPolyQuant quant;
     float attr_x = 0.0, attr_y = 0.0;
 //    float attr_a = 1.641, attr_b = 1.902;
@@ -96,12 +94,13 @@ private:
     float fm_amount;
     VoltsPerOctave hz;
     QuadraturePhaser* phaser;
+    float lfo_sample;
 #ifndef EXT_FM
     FloatArray env_copy;
 #endif
 public:
     PolygonalLichPatch()
-        : mod_lfo(1.0, getSampleRate() / getBlockSize())
+        : mod_lfo(0.2, getSampleRate() / getBlockSize())
 #ifdef OVERSAMPLE_FACTOR
         , osc(BASE_FREQ, getSampleRate() * OVERSAMPLE_FACTOR)
         , mod(BASE_FREQ, getSampleRate() * OVERSAMPLE_FACTOR)
@@ -123,16 +122,16 @@ public:
         setParameterValue(PARAMETER_AC, 0.0);
 #else
         registerParameter(PARAMETER_AC, "Ext Env Amount");
-        setParameterValue(PARAMETER_AC, 1.0);
+        setParameterValue(PARAMETER_AC, 0.0);
 #endif
         registerParameter(PARAMETER_AD, "Rotation");
         setParameterValue(PARAMETER_AD, 0.0);
         registerParameter(PARAMETER_AE, "Shift");
         setParameterValue(PARAMETER_AE, 0.0);
         registerParameter(PARAMETER_AF, "Chaos");
-        setParameterValue(PARAMETER_AF, 0.0);
+        setParameterValue(PARAMETER_AF, 0.5);
         registerParameter(PARAMETER_F, "ChaosX>");
-        registerParameter(PARAMETER_G, "ChaosY>");
+        registerParameter(PARAMETER_G, "ChaoLFOY>");
 #ifdef OVERSAMPLE_FACTOR
         upsampler_pitch = UpSampler::create(1, OVERSAMPLE_FACTOR);
         upsampler_fm = UpSampler::create(1, OVERSAMPLE_FACTOR);
@@ -190,15 +189,17 @@ public:
     }
 
     void processAttractor(float chaos) {
-        float old_x = attr_x * chaos, old_y = attr_y * chaos;
+        float old_x = attr_x, old_y = attr_y;
         attr_x = sin(attr_a * old_y) - cos(attr_b * old_x);
         attr_y = sin(attr_c * old_x) - cos(attr_d * old_y);
+        lfo_sample = mod_lfo.generate(attr_y * chaos * 0.05);
     }
 
     void processAudio(AudioBuffer& buffer) {
         processAttractor(getParameterValue(PARAMETER_AF));
         setParameterValue(PARAMETER_F, attr_x * 0.5 + 0.5);
-        setParameterValue(PARAMETER_G, attr_y * 0.5 + 0.5);
+        setParameterValue(PARAMETER_G, lfo_sample * 0.5 + 0.5);
+        setButton(BUTTON_C, lfo_sample >= 0.0);
         //setParameterValue(PARAMETER_G, atan2f(attr_y, attr_x) / M_PI / 2.0);
 
         hz.setTune(-4.0 + getParameterValue(PARAMETER_A) * 4.0);
@@ -206,11 +207,9 @@ public:
         FloatArray right = buffer.getSamples(RIGHT_CHANNEL);
 
 #ifndef EXT_FM
+        env_copy.copyFrom(right);
         float ext_env_amt = getParameterValue(PARAMETER_AC);
-        if (ext_env_amt >= 0.5) {
-            env_copy.copyFrom(right);
-            env_copy.multiply(ext_env_amt * 2 - 1.0);
-        }
+        env_copy.multiply(ext_env_amt);
 #endif
         // Update params in FM settings
         if (isModeA) {
@@ -234,8 +233,8 @@ public:
         float ext_fm_amt = getParameterValue(PARAMETER_AC);
 #endif
         fm_amount = getParameterValue(PARAMETER_AA);
-        fm_ratio = getParameterValue(PARAMETER_AB) * MAX_FM_AMOUNT;        
-        phaser->setAmount(getParameterValue(PARAMETER_AD) * 0.0005);
+        fm_ratio = getParameterValue(PARAMETER_AB);
+        phaser->setAmount(getParameterValue(PARAMETER_AD) * 0.0001);
         phaser->setControl(getParameterValue(PARAMETER_AE));
 
         // Carrier / modulator frequency
@@ -251,7 +250,9 @@ public:
         left.multiply(fm_amount * MAX_FM_AMOUNT);
 #ifdef EXT_FM
         right.multiply(ext_fm_amt * MAX_FM_AMOUNT);
-        left.add(right);
+        right.add(left);
+#else
+        right.copyFrom(left);
 #endif
 
 #ifdef OVERSAMPLE_FACTOR
@@ -262,6 +263,8 @@ public:
         AudioBuffer& audio_buf = buffer;
 #endif
         // Generate quadrature output
+        //return;
+        //osc.generate(audio_buf);
         osc.generate(audio_buf, audio_buf.getSamples(1));
         phaser->process(audio_buf, audio_buf);
 
@@ -275,8 +278,8 @@ public:
             right.multiply(env_copy);
         }
         else {
-            left.multiply(ext_env_amt * 2);
-            right.multiply(ext_env_amt * 2);
+            left.multiply(1.0 - ext_env_amt * 2);
+            right.multiply(1.0 - ext_env_amt * 2);
         }
 #endif
     }
