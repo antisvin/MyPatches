@@ -9,11 +9,15 @@
 #include "VoltsPerOctave.h"
 #include "DelayLine.hpp"
 #include "QuadraturePhaser.hpp"
+#include "Quantizer.hpp"
+
 
 
 #define BASE_FREQ 55.f
 #define MAX_POLY 20.f
 #define MAX_FM_AMOUNT 0.1f
+#define QUANTIZER Quantizer24TET
+
 
 // Oversampling ends up sounding fairly disappointing
 //#define OVERSAMPLE_FACTOR 2
@@ -78,10 +82,9 @@ private:
     const float attr_c = 1.659;
     const float attr_d = -0.943;
 //    float attr_a = 2.75, attr_b = 0.2;
-
-    inline float crossfade(float a, float b, float fade) {
-        return a * fade + b * (1 - fade);
-    }    
+#ifdef QUANTIZER
+    QUANTIZER quantizer;
+#endif
 #ifdef OVERSAMPLE_FACTOR
     UpSampler* upsampler_pitch;
     UpSampler* upsampler_fm;
@@ -98,6 +101,10 @@ private:
 #ifndef EXT_FM
     FloatArray env_copy;
 #endif
+    inline float crossfade(float a, float b, float fade) {
+        return a * fade + b * (1 - fade);
+    }
+
 public:
     PolygonalLichPatch()
         : mod_lfo(0.2, getSampleRate() / getBlockSize())
@@ -202,10 +209,21 @@ public:
         setButton(BUTTON_C, lfo_sample >= 0.0);
         //setParameterValue(PARAMETER_G, atan2f(attr_y, attr_x) / M_PI / 2.0);
 
-        hz.setTune(-4.0 + getParameterValue(PARAMETER_A) * 4.0);
         FloatArray left = buffer.getSamples(LEFT_CHANNEL);
         FloatArray right = buffer.getSamples(RIGHT_CHANNEL);
 
+        float tune = -4.0 + getParameterValue(PARAMETER_A) * 4.0;
+        #ifndef QUANTIZER
+        hz.setTune(tune);
+        #endif
+        // Carrier / modulator frequency
+        #ifdef QUANTIZER
+        float volts = quantizer.process(tune + hz.sampleToVolts(left[0]));
+        float freq = hz.voltsToHertz(volts);
+        #else
+        float freq = hz.getFrequency(left[0]);
+        #endif
+                
 #ifndef EXT_FM
         env_copy.copyFrom(right);
         float ext_env_amt = getParameterValue(PARAMETER_AC);
@@ -237,8 +255,6 @@ public:
         phaser->setAmount(getParameterValue(PARAMETER_AD) * 0.0001);
         phaser->setControl(getParameterValue(PARAMETER_AE));
 
-        // Carrier / modulator frequency
-        float freq = hz.getFrequency(left[0]);
         osc.setFrequency(freq);
         mod.setFrequency(freq);
 
