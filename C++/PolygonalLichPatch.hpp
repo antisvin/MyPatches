@@ -10,14 +10,13 @@
 #include "DelayLine.hpp"
 #include "QuadraturePhaser.hpp"
 #include "Quantizer.hpp"
-
+#include "LockableValue.hpp"
 
 
 #define BASE_FREQ 55.f
 #define MAX_POLY 20.f
 #define MAX_FM_AMOUNT 0.1f
 #define QUANTIZER Quantizer24TET
-
 
 // Oversampling ends up sounding fairly disappointing
 //#define OVERSAMPLE_FACTOR 2
@@ -27,6 +26,9 @@
 #endif
 
 #define EXT_FM
+
+using SmoothParam = LockableValue<SmoothValue<float>, float>;
+using StiffParam = LockableValue<StiffValue<float>, float>;
 
 struct Point {
     Point() = default;
@@ -75,13 +77,10 @@ private:
     SineOscillator mod_lfo;
     PolygonalOscillator::NPolyQuant quant;
     float attr_x = 0.0, attr_y = 0.0;
-//    float attr_a = 1.641, attr_b = 1.902;
-//    float attr_c = 0.316, attr_d = 1.525;
     const float attr_a = -0.827;
     const float attr_b = -1.637;
     const float attr_c = 1.659;
     const float attr_d = -0.943;
-//    float attr_a = 2.75, attr_b = 0.2;
 #ifdef QUANTIZER
     QUANTIZER quantizer;
 #endif
@@ -98,6 +97,15 @@ private:
     VoltsPerOctave hz;
     QuadraturePhaser* phaser;
     float lfo_sample;
+    SmoothParam p_teeth = SmoothParam(0.01);
+    SmoothParam p_npoly = SmoothParam(0.01);
+    StiffParam p_quantize = StiffParam(0.2);
+    SmoothParam p_fm_amount = SmoothParam(0.01);
+    SmoothParam p_fm_shape = SmoothParam(0.01);
+    SmoothParam p_ext_amount = SmoothParam(0.01);
+    SmoothParam p_rotation = SmoothParam(0.01);
+    SmoothParam p_shift = SmoothParam(0.01);
+    SmoothParam p_chaos = SmoothParam(0.01, 0.5);
 #ifndef EXT_FM
     FloatArray env_copy;
 #endif
@@ -107,7 +115,7 @@ private:
 
 public:
     PolygonalLichPatch()
-        : mod_lfo(0.2, getSampleRate() / getBlockSize())
+        : mod_lfo(0.75, getSampleRate() / getBlockSize())
 #ifdef OVERSAMPLE_FACTOR
         , osc(BASE_FREQ, getSampleRate() * OVERSAMPLE_FACTOR)
         , mod(BASE_FREQ, getSampleRate() * OVERSAMPLE_FACTOR)
@@ -117,8 +125,8 @@ public:
 #endif
     {
         registerParameter(PARAMETER_A, "Tune");
-        registerParameter(PARAMETER_B, "Teeth");
-        registerParameter(PARAMETER_C, "NPoly");
+        registerParameter(PARAMETER_B, "NPoly");
+        registerParameter(PARAMETER_C, "Teeth");
         registerParameter(PARAMETER_D, "Quantize");
         registerParameter(PARAMETER_AA, "FM Amount");
         setParameterValue(PARAMETER_AA, 0.0);
@@ -138,7 +146,18 @@ public:
         registerParameter(PARAMETER_AF, "Chaos");
         setParameterValue(PARAMETER_AF, 0.5);
         registerParameter(PARAMETER_F, "ChaosX>");
-        registerParameter(PARAMETER_G, "ChaoLFOY>");
+        registerParameter(PARAMETER_G, "ChaoLFO>");
+
+        p_npoly.rawValue().lambda = 0.9;
+        p_teeth.rawValue().lambda = 0.9;
+        p_quantize.rawValue().delta = 0.1;
+        p_fm_amount.rawValue().lambda = 0.9;
+        p_fm_shape.rawValue().lambda = 0.9;
+        p_ext_amount.rawValue().lambda = 0.9;
+        p_rotation.rawValue().lambda = 0.9;
+        p_shift.rawValue().lambda = 0.9;
+        p_chaos.rawValue().lambda = 0.9;
+        
 #ifdef OVERSAMPLE_FACTOR
         upsampler_pitch = UpSampler::create(1, OVERSAMPLE_FACTOR);
         upsampler_fm = UpSampler::create(1, OVERSAMPLE_FACTOR);
@@ -170,6 +189,18 @@ public:
 #endif
     }
 
+    void lockAll() {
+        p_teeth.setLock(true);
+        p_npoly.setLock(true);
+        p_quantize.setLock(true);
+        p_fm_amount.setLock(true);
+        p_fm_shape.setLock(true);
+        p_ext_amount.setLock(true);
+        p_rotation.setLock(true);
+        p_shift.setLock(true);
+        p_chaos.setLock(true);
+    }
+
     void buttonChanged(PatchButtonId bid, uint16_t value, uint16_t samples) override {
         switch(bid){
         case BUTTON_A:
@@ -180,6 +211,7 @@ public:
                 setButton(BUTTON_B, false, 0);
                 isModeB = false;
             }
+            lockAll();
             break;
         case BUTTON_B:
             if(value)
@@ -189,6 +221,7 @@ public:
                 setButton(BUTTON_A, false, 0);
                 isModeA = false;
             }
+            lockAll();
             break;
         default:
             break;
@@ -199,19 +232,21 @@ public:
         float old_x = attr_x, old_y = attr_y;
         attr_x = sin(attr_a * old_y) - cos(attr_b * old_x);
         attr_y = sin(attr_c * old_x) - cos(attr_d * old_y);
-        lfo_sample = mod_lfo.generate(attr_y * chaos * 0.05);
+        lfo_sample = mod_lfo.generate(attr_y * chaos * 0.02);
     }
 
     void processAudio(AudioBuffer& buffer) {
+
+        // CV output
         processAttractor(getParameterValue(PARAMETER_AF));
         setParameterValue(PARAMETER_F, attr_x * 0.5 + 0.5);
         setParameterValue(PARAMETER_G, lfo_sample * 0.5 + 0.5);
         setButton(BUTTON_C, lfo_sample >= 0.0);
-        //setParameterValue(PARAMETER_G, atan2f(attr_y, attr_x) / M_PI / 2.0);
 
         FloatArray left = buffer.getSamples(LEFT_CHANNEL);
         FloatArray right = buffer.getSamples(RIGHT_CHANNEL);
 
+        // Tuning
         float tune = -4.0 + getParameterValue(PARAMETER_A) * 4.0;
         #ifndef QUANTIZER
         hz.setTune(tune);
@@ -223,12 +258,7 @@ public:
         #else
         float freq = hz.getFrequency(left[0]);
         #endif
-                
-#ifndef EXT_FM
-        env_copy.copyFrom(right);
-        float ext_env_amt = getParameterValue(PARAMETER_AC);
-        env_copy.multiply(ext_env_amt);
-#endif
+
         // Update params in FM settings
         if (isModeA) {
             setParameterValue(PARAMETER_AA, getParameterValue(PARAMETER_B));
@@ -241,19 +271,31 @@ public:
             setParameterValue(PARAMETER_AF, getParameterValue(PARAMETER_D));
         }
         else {
+            p_npoly.update(getParameterValue(PARAMETER_B));
+            p_teeth.update(getParameterValue(PARAMETER_C));
+            p_quantize.update(getParameterValue(PARAMETER_D));
             osc.setParams(
-                updateQuant(getParameterValue(PARAMETER_D)),
-                getParameterValue(PARAMETER_C),
-                getParameterValue(PARAMETER_B));
+                updateQuant(p_quantize.getValue()),
+                p_npoly.getValue(),
+                p_teeth.getValue());
         }
 
 #ifdef EXT_FM
-        float ext_fm_amt = getParameterValue(PARAMETER_AC);
+        p_ext_amount.update(getParameterValue(PARAMETER_AC));
+        float ext_fm_amt = p_ext_amount.getValue();
+#else
+        env_copy.copyFrom(right);
+        float ext_env_amt = p_ext_amount.update(getParameterValue(PARAMETER_AC)).getValue();
+        env_copy.multiply(ext_env_amt);
 #endif
-        fm_amount = getParameterValue(PARAMETER_AA);
-        fm_ratio = getParameterValue(PARAMETER_AB);
-        phaser->setAmount(getParameterValue(PARAMETER_AD) * 0.0001);
-        phaser->setControl(getParameterValue(PARAMETER_AE));
+        p_fm_amount.update(getParameterValue(PARAMETER_AA));
+        fm_amount = p_fm_amount.getValue();
+        p_fm_shape.update(getParameterValue(PARAMETER_AB));
+        fm_ratio = p_fm_shape.getValue();
+        p_rotation.update(getParameterValue(PARAMETER_AD));
+        phaser->setAmount(p_rotation.getValue() * 0.0001);
+        p_shift.update(getParameterValue(PARAMETER_AE));
+        phaser->setControl(p_shift.getValue());
 
         osc.setFrequency(freq);
         mod.setFrequency(freq);
@@ -272,7 +314,6 @@ public:
 #endif
 
 #ifdef OVERSAMPLE_FACTOR
-//        upsampler_pitch->process(left, oversample_buf->getSamples(0));
         upsampler_fm->process(left, oversample_buf->getSamples(1));
         AudioBuffer& audio_buf = *oversample_buf;
 #else

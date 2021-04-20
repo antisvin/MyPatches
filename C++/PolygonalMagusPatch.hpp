@@ -11,6 +11,8 @@
 #include "VoltsPerOctave.h"
 #include "DelayLine.hpp"
 #include "Resample.h"
+#include "Quantizer.hpp"
+
 
 #define BASE_FREQ 55.f
 #define MAX_POLY 20.f
@@ -18,11 +20,12 @@
 #define SCREEN_WIDTH 128 // Hardcoded to make initialization easier
 #define SCREEN_BUF_OVERLAP (SCREEN_WIDTH / 8)
 #define SCREEN_PREVIEW_BUF_SIZE (SCREEN_WIDTH / 2 + SCREEN_BUF_OVERLAP)
-#define MAX_FM_AMOUNT 0.2f
+#define MAX_FM_AMOUNT 0.05f
 #define FM_AMOUNT_MULT (1.f / MAX_FM_AMOUNT)
 #define SCREEN_OFFSET(x) ((x)*SCREEN_WIDTH / 4)
 #define MAX_DELAY (64 * 1024)
 #define MAX_FEEDBACK 0.7
+#define QUANTIZER Quantizer24TET
 
 //#define OVERSAMPLE_FACTOR 2
 
@@ -78,6 +81,9 @@ private:
     const float attr_c = 1.659;
     const float attr_d = -0.943;
     QuadratureSineOscillator mod_lfo;
+#ifdef QUANTIZER
+    QUANTIZER quantizer;
+#endif
 #ifdef OVERSAMPLE_FACTOR
     UpSampler* upsampler_pitch;
     UpSampler* upsampler_fm;
@@ -116,6 +122,7 @@ public:
         registerParameter(PARAMETER_A, "Tune");
         registerParameter(PARAMETER_B, "Quantize");
         registerParameter(PARAMETER_AA, "NPoly");
+        setParameterValue(PARAMETER_AA, 0.15);
         registerParameter(PARAMETER_AB, "Teeth");
         // FM / env
         registerParameter(PARAMETER_C, "FM Amount");
@@ -124,8 +131,8 @@ public:
         setParameterValue(PARAMETER_D, 0.0);
         registerParameter(PARAMETER_AC, "Ext FM Amt");
         setParameterValue(PARAMETER_AC, 0.0);
-        registerParameter(PARAMETER_AD, "Ext Env");
-        setParameterValue(PARAMETER_AD, 1.0);
+        //registerParameter(PARAMETER_AD, "Ext Env");
+        //setParameterValue(PARAMETER_AD, 1.0);
         // Delay
         registerParameter(PARAMETER_E, "Ping");
         setParameterValue(PARAMETER_E, 0.5);
@@ -137,7 +144,7 @@ public:
         setParameterValue(PARAMETER_AF, 0.5);
         // Chaotic modulator
         registerParameter(PARAMETER_G, "LFO freq");
-        setParameterValue(PARAMETER_AD, 0.1);
+        setParameterValue(PARAMETER_G, 0.1);
         registerParameter(PARAMETER_H, "ModX>");
         registerParameter(PARAMETER_AG, "Chaos Amt");
         registerParameter(PARAMETER_AH, "ModY>");
@@ -233,7 +240,10 @@ public:
         mod_lfo.setFrequency(0.01 + getParameterValue(PARAMETER_G) * 4.99);
         processAttractor(getParameterValue(PARAMETER_AG));
 
-        hz.setTune(-3.0 + getParameterValue(PARAMETER_A) * 4.0);
+        float tune = -2.0 + getParameterValue(PARAMETER_A) * 4.0;
+        #ifndef QUANTIZER
+        hz.setTune(tune);
+        #endif
         FloatArray left = buffer.getSamples(LEFT_CHANNEL);
         FloatArray right = buffer.getSamples(RIGHT_CHANNEL);
         env_copy.copyFrom(right);
@@ -246,7 +256,13 @@ public:
             getParameterValue(PARAMETER_AA), getParameterValue(PARAMETER_AB));
 
         // Carrier / modulator frequency
+        #ifdef QUANTIZER
+        float volts = quantizer.process(tune + hz.sampleToVolts(left[0]));
+        float freq = hz.voltsToHertz(volts);
+        #else
         float freq = hz.getFrequency(left[0]);
+        #endif
+        
         osc.setFrequency(freq);
         mod.setFrequency(freq);
 

@@ -4,6 +4,7 @@
 /**
  * Ported from https://github.com/philippesalembier/SckitamVCV/blob/master/src/PolygonalVCO.cpp
  *
+ * Original code by Philippe Salembier is distributed under terms of GPL v3 Licence
  */
 
 #include <cmath>
