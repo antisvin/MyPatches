@@ -1,6 +1,8 @@
 #ifndef __QUANTIZER_HPP__
 #define __QUANTIZER_HPP__
 
+#include "SignalProcessor.h"
+
 /**
  * Quantize float value in range [0..1] into num_steps steps.
  * Optionally check for output range.

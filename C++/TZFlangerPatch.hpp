@@ -74,8 +74,8 @@ public:
 
   ~TZFlangerPatch(){
     for (int ch = 0; ch < 2; ch++) {
-      dryDelayBuffers[ch].destroy();
-      modDelayBuffers[ch].destroy();
+      DryDelay::destroy(dryDelayBuffers[ch]);
+      ModDelay::destroy(modDelayBuffers[ch]);
     }
   }
 

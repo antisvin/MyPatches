@@ -11,6 +11,7 @@
 #include "QuadraturePhaser.hpp"
 #include "Quantizer.hpp"
 #include "LockableValue.hpp"
+#include "Resample.h"
 
 
 #define BASE_FREQ 55.f
@@ -19,7 +20,7 @@
 #define QUANTIZER Quantizer24TET
 
 // Oversampling ends up sounding fairly disappointing
-//#define OVERSAMPLE_FACTOR 2
+// #define OVERSAMPLE_FACTOR 2
 
 #ifdef OVERSAMPLE_FACTOR
 #include "Resample.h"
@@ -29,24 +30,6 @@
 
 using SmoothParam = LockableValue<SmoothValue<float>, float>;
 using StiffParam = LockableValue<StiffValue<float>, float>;
-
-struct Point {
-    Point() = default;
-    Point(float x, float y) : x(x), y(y) {};
-    float x, y;
-
-    friend Point operator+(Point lhs, const Point& rhs) {
-        return Point(lhs.x + rhs.x, lhs.y + rhs.y);
-    }
-
-    friend Point operator-(Point lhs, const Point& rhs) {
-        return Point(lhs.x - rhs.x, lhs.y - rhs.y);
-    }
-
-    Point operator*(float val) {
-        return Point(x * val, y * val);
-    }    
-};
 
 
 class ModOscillator : public MultiOscillator {

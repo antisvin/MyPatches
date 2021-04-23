@@ -49,17 +49,19 @@ public:
         size_t len = output.getSize();
         // Real channel
         float* out = output.getSamples(0).getData();
+        float phase_t = phase;
         for (size_t i = 0; i < len; ++i) {
             *out++ = sinf(phase);
-            phase += incr; // allow phase to overrun
+            phase_t += incr; // allow phase to overrun
         }
         // Imaginary channel. Pointer to output is already in place
         out = output.getSamples(1).getData();
+        phase_t = phase;
         for (size_t i = 0; i < len; ++i) {
             *out++ = cosf(phase);
-            phase += incr; // allow phase to overrun
+            phase_t += incr; // allow phase to overrun
         }
-        phase = fmodf(phase, 2 * M_PI);
+        phase = fmodf(phase_t, 2 * M_PI);
     }
     ComplexFloat generate(float fm) override {
         ComplexFloat sample { sinf(phase), cosf(phase) };
