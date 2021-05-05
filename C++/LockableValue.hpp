@@ -5,8 +5,8 @@ template <typename Value, typename T>
 class LockableValue : public Value {
 public:
     LockableValue(T delta = T(0), T value = T(0))
-        : delta(delta)
-        , value(value) {
+        : delta(delta) {
+        this->value.update(value);
     }
     void setLock(bool locked) {
         this->locked = locked;

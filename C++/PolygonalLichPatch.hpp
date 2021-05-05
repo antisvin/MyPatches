@@ -17,10 +17,10 @@
 #define BASE_FREQ 55.f
 #define MAX_POLY 20.f
 #define MAX_FM_AMOUNT 0.1f
-#define QUANTIZER Quantizer24TET
+#define QUANTIZER Quantizer12TET
 
 // Oversampling ends up sounding fairly disappointing
-// #define OVERSAMPLE_FACTOR 2
+//#define OVERSAMPLE_FACTOR 2
 
 #ifdef OVERSAMPLE_FACTOR
 #include "Resample.h"
@@ -281,7 +281,11 @@ public:
         phaser->setControl(p_shift.getValue());
 
         osc.setFrequency(freq);
+#ifdef OVERSAMPLE_FACTOR
+        mod.setFrequency(freq / OVERSAMPLE_FACTOR);
+#else
         mod.setFrequency(freq);
+#endif
 
         // Generate modulator
         mod.setMorph(fm_ratio);

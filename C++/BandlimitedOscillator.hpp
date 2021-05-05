@@ -21,9 +21,6 @@ public:
     void setSampleRate(float sr) override {
         mul = 1.0f / sr;
     }
-    float getSampleRate() override {
-        return 1.0f / mul;
-    }
     void setFrequency(float freq) override {
         nfreq = mul * freq;
     }

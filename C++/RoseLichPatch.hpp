@@ -13,13 +13,27 @@
 #include "MultiProcessor.hpp"
 #include "Wavefolder.hpp"
 
+
 #define BASE_FREQ 55.f
-#define MAX_POLY 20.f
 #define MAX_FM_AMOUNT 0.1f
-#define QUANTIZER Quantizer24TET
 #define EXT_FM
 #define MAX_RATIO 16
-//#define OVERSAMPLE_FACTOR 2
+
+//#define QUANTIZER Quantizer12TET
+// Uncomment to quantize
+
+#define P_TUNE      PARAMETER_A
+#define P_HARMONICS PARAMETER_B
+#define P_MULT      PARAMETER_C
+#define P_DIV       PARAMETER_D
+#define P_FEEDBACK1 PARAMETER_AA
+#define P_FB2_DIR   PARAMETER_AB
+#define P_FB2_MAG   PARAMETER_AC
+#define P_FOLD      PARAMETER_AD
+#define P_DIR       PARAMETER_AE
+#define P_MAG       PARAMETER_AF
+#define P_CHAOS_X   PARAMETER_F
+#define P_CHAOS_LFO PARAMETER_G
 
 using SmoothParam = LockableValue<SmoothValue<float>, float>;
 using StiffParam = LockableValue<StiffValue<float>, float>;
@@ -38,9 +52,9 @@ public:
     }
 
 private:
-    TriangleOscillator osc0;
+    SquareOscillator osc0;
     SineOscillator osc1;
-    SquareOscillator osc2;
+    TriangleOscillator osc2;
 };
 
 
@@ -56,15 +70,10 @@ private:
     const float attr_b = -1.637;
     const float attr_c = 1.659;
     const float attr_d = -0.943;
+    ComplexFloat cmp_offset;
+    ComplexFloat sample;
 #ifdef QUANTIZER
     QUANTIZER quantizer;
-#endif
-#ifdef OVERSAMPLE_FACTOR
-    UpSampler* upsampler_pitch;
-    UpSampler* upsampler_fm;
-    DownSampler* downsampler_left;
-    DownSampler* downsampler_right;
-    AudioBuffer* oversample_buf;
 #endif
     bool isModeA = false, isModeB = false;
     float fm_ratio;
@@ -73,15 +82,19 @@ private:
     // QuadraturePhaser* phaser;
     StereoWavefolder wavefolder;
     float lfo_sample;
+    SmoothParam p_feedback = SmoothParam(0.01);
     StiffParam p_divisor = StiffParam(1.f / float(MAX_RATIO + 1));
     StiffParam p_multiplier = StiffParam(1.f / float(MAX_RATIO));
     SmoothParam p_ratio = SmoothParam(0.01);
-    SmoothParam p_fm_amount = SmoothParam(0.01);
-    SmoothParam p_fm_shape = SmoothParam(0.01);
-    SmoothParam p_ext_amount = SmoothParam(0.01);
+    SmoothParam p_harmonics = SmoothParam(0.01);
+    SmoothParam p_fb_direction = SmoothParam(0.01);
+    SmoothParam p_fb_magnitude = SmoothParam(0.01);
+//    StiffParam p_fm_divisor = StiffParam(1.f / float(MAX_FM_RATIO + 1));
+//    StiffParam p_fm_multiplier = StiffParam(1.f / float(MAX_FM_RATIO));
+//    SmoothParam p_fm_ratio = SmoothParam(0.01);
     SmoothParam p_fold = SmoothParam(0.01);
     SmoothParam p_direction = SmoothParam(0.01);
-    SmoothParam p_offset = SmoothParam(0.01);
+    SmoothParam p_magnitude = SmoothParam(0.01);
 #ifndef EXT_FM
     FloatArray env_copy;
 #endif
@@ -92,87 +105,61 @@ private:
 public:
     RoseLichPatch()
         : mod_lfo(0.75, getSampleRate() / getBlockSize())
-#ifdef OVERSAMPLE_FACTOR
-        , osc(BASE_FREQ, getSampleRate() * OVERSAMPLE_FACTOR)
-        , mod(BASE_FREQ, getSampleRate() * OVERSAMPLE_FACTOR)
-#else
         , osc(BASE_FREQ, getSampleRate())
         , mod(BASE_FREQ, getSampleRate())
-#endif
     {
-        registerParameter(PARAMETER_A, "Tune");
-        registerParameter(PARAMETER_B, "FM Amount");
-        registerParameter(PARAMETER_C, "Multiplier");
-        registerParameter(PARAMETER_D, "Divisor");
-        registerParameter(PARAMETER_AA, "");
-        setParameterValue(PARAMETER_AA, 0.0);
-        registerParameter(PARAMETER_AB, "FM Mod Shape");
-        setParameterValue(PARAMETER_AB, 0.0);
-#ifdef EXT_FM
-        registerParameter(PARAMETER_AC, "Ext FM Amount");
-        setParameterValue(PARAMETER_AC, 0.0);
-#else
-        registerParameter(PARAMETER_AC, "Ext Env Amount");
-        setParameterValue(PARAMETER_AC, 0.0);
-#endif
-        registerParameter(PARAMETER_AD, "Fold");
-        setParameterValue(PARAMETER_AD, 0.0);
-        registerParameter(PARAMETER_AE, "Direction");
-        setParameterValue(PARAMETER_AE, 0.0);
-        registerParameter(PARAMETER_AF, "Offset");
-        setParameterValue(PARAMETER_AF, 0.0);
-        registerParameter(PARAMETER_F, "ChaosX>");
-        registerParameter(PARAMETER_G, "ChaoLFO>");
+        registerParameter(P_TUNE, "Tune");
+        registerParameter(P_HARMONICS, "Harmonics");
+        registerParameter(P_MULT, "Multiplier");
+        registerParameter(P_DIV, "Divisor");
+        registerParameter(P_FEEDBACK1, "Feedback1");
+        setParameterValue(P_FEEDBACK1, 0.f);
+        registerParameter(P_FB2_MAG, "Feedbaack2 Magnitude");
+        registerParameter(P_FB2_DIR, "Feedbaack2 Phase");        
+//        setParameterValue(P_FM_MULT, 0.5);
+//        registerParameter(P_FM_DIV, "FM Divisor");
+//        setParameterValue(P_FM_DIV, 0.5);
+        registerParameter(P_FOLD, "Fold");
+        registerParameter(P_DIR, "Direction");
+        registerParameter(P_MAG, "Offset");
+        registerParameter(P_CHAOS_X, "ChaosX>");
+        registerParameter(P_CHAOS_LFO, "ChaoLFO>");
 
-        p_fm_amount.rawValue().lambda = 0.9;
+        p_feedback.rawValue().lambda = 0.9;
         p_multiplier.rawValue().delta = (1.f / float(MAX_RATIO + 1));
         p_divisor.rawValue().delta = (1.f / float(MAX_RATIO + 2));
-        p_fm_shape.rawValue().lambda = 0.9;
-        p_ext_amount.rawValue().lambda = 0.9;
+        p_harmonics.rawValue().lambda = 0.9;
+        p_fb_direction.rawValue().lambda = 0.9;
+        p_fb_magnitude.rawValue().lambda = 0.9;
         p_fold.rawValue().lambda = 0.9;
         p_direction.rawValue().lambda = 0.9;
-        p_offset.rawValue().lambda = 0.9;
+        p_magnitude.rawValue().lambda = 0.9;
 
-#ifdef OVERSAMPLE_FACTOR
-        upsampler_pitch = UpSampler::create(1, OVERSAMPLE_FACTOR);
-        upsampler_fm = UpSampler::create(1, OVERSAMPLE_FACTOR);
-        downsampler_left = DownSampler::create(1, OVERSAMPLE_FACTOR);
-        downsampler_right = DownSampler::create(1, OVERSAMPLE_FACTOR);
-        oversample_buf = AudioBuffer::create(2, getBlockSize() * OVERSAMPLE_FACTOR);
-//        phaser = QuadraturePhaser::create(getSampleRate(), getBlockSize() * OVERSAMPLE_FACTOR);
-#else
-//        phaser = QuadraturePhaser::create(getSampleRate(), getBlockSize());
-#endif
         setButton(BUTTON_A, false, 0);
         setButton(BUTTON_B, false, 0);
+//        lockAll();
 #ifndef EXT_FM
         env_copy = FloatArray::create(getBlockSize());
 #endif
     }
 
     ~RoseLichPatch() {
-//        QuadraturePhaser::destroy(phaser);
-#ifdef OVERSAMPLE_FACTOR
-        UpSampler::destroy(upsampler_pitch);
-        UpSampler::destroy(upsampler_fm);
-        DownSampler::destroy(downsampler_left);
-        DownSampler::destroy(downsampler_right);
-        AudioBuffer::destroy(oversample_buf);
-#endif
 #ifndef EXT_FM
         FloatArray::destroy(env_copy);
 #endif
     }
 
     void lockAll() {
+        p_feedback.setLock(true);
+        p_ratio.setLock(true);
         p_multiplier.setLock(true);
         p_divisor.setLock(true);
-        p_fm_amount.setLock(true);
-        p_fm_shape.setLock(true);
-        p_ext_amount.setLock(true);
+        p_harmonics.setLock(true);
+        p_fb_direction.setLock(true);
+        p_fb_magnitude.setLock(true);
         p_fold.setLock(true);
         p_direction.setLock(true);
-        p_offset.setLock(true);
+        p_magnitude.setLock(true);
     }
 
     void buttonChanged(PatchButtonId bid, uint16_t value, uint16_t samples) override {
@@ -211,16 +198,16 @@ public:
 
     void processAudio(AudioBuffer& buffer) {
         // CV output
-        processAttractor(getParameterValue(PARAMETER_AF));
-        setParameterValue(PARAMETER_F, attr_x * 0.5 + 0.5);
-        setParameterValue(PARAMETER_G, lfo_sample * 0.5 + 0.5);
+        processAttractor(1.0);
+        setParameterValue(P_CHAOS_X, attr_x * 0.5 + 0.5);
+        setParameterValue(P_CHAOS_LFO, lfo_sample * 0.5 + 0.5);
         setButton(BUTTON_C, lfo_sample >= 0.0);
 
         FloatArray left = buffer.getSamples(LEFT_CHANNEL);
         FloatArray right = buffer.getSamples(RIGHT_CHANNEL);
 
         // Tuning
-        float tune = -4.0 + getParameterValue(PARAMETER_A) * 4.0;
+        float tune = -4.0 + getParameterValue(P_TUNE) * 4.0;
 #ifndef QUANTIZER
         hz.setTune(tune);
 #endif
@@ -244,9 +231,10 @@ public:
             setParameterValue(PARAMETER_AF, getParameterValue(PARAMETER_D));
         }
         else {
-            p_multiplier.update(getParameterValue(PARAMETER_C));
-            p_divisor.update(getParameterValue(PARAMETER_D));
-            p_ratio.update(getParameterValue(PARAMETER_C));
+            p_harmonics.update(getParameterValue(P_HARMONICS));
+            p_multiplier.update(getParameterValue(P_MULT));
+            p_divisor.update(getParameterValue(P_DIV));
+            p_ratio.update(getParameterValue(P_MULT));
             int divisor = (MAX_RATIO + 1) * p_divisor.getValue();
             if (divisor == 0) {
                 osc.setRatio(p_ratio.getValue() * MAX_RATIO);
@@ -257,37 +245,27 @@ public:
             }
         }
 
-#ifdef EXT_FM
-        p_ext_amount.update(getParameterValue(PARAMETER_AC));
-        float ext_fm_amt = p_ext_amount.getValue();
-#else
+#ifndef EXT_FM
         env_copy.copyFrom(right);
-        float ext_env_amt =
-            p_ext_amount.update(getParameterValue(PARAMETER_AC)).getValue();
-        env_copy.multiply(ext_env_amt);
 #endif
-        p_fm_amount.update(getParameterValue(PARAMETER_B));
-        fm_amount = p_fm_amount.getValue();
-        p_fm_shape.update(getParameterValue(PARAMETER_AB));
-        fm_ratio = p_fm_shape.getValue();
+        p_feedback.update(getParameterValue(P_FEEDBACK1));
+        p_fb_direction.update(getParameterValue(P_FB2_DIR));
+        p_fb_magnitude.update(getParameterValue(P_FB2_MAG));
 
-        p_fold.update(getParameterValue(PARAMETER_AD));
-#if 0
-        p_rotation.update(getParameterValue(PARAMETER_AD));
-        phaser->setAmount(p_rotation.getValue() * 0.0001);
-        p_shift.update(getParameterValue(PARAMETER_AE));
-        phaser->setControl(p_shift.getValue());
-#endif
+        p_fold.update(getParameterValue(P_FOLD) * 2.f);
+        p_direction.update(getParameterValue(P_DIR));
+        p_magnitude.update(getParameterValue(P_MAG));
 
         osc.setFrequency(freq);
-        mod.setFrequency(freq);
+        osc.setHarmonics(p_harmonics.getValue());
+        osc.setFeedback1(p_feedback.getValue());
+        osc.setFeedback2(p_fb_magnitude.getValue(), p_fb_direction.getValue() * M_PI * 4.f);
 
         // Generate modulator
-        mod.setMorph(fm_ratio);
-        mod.generate(left);
+        //mod.generate(left);
 
         // Use mod + ext input for FM
-        left.multiply(fm_amount * MAX_FM_AMOUNT);
+        left.multiply(MAX_FM_AMOUNT);
 #ifdef EXT_FM
 //        right.multiply(ext_fm_amt * MAX_FM_AMOUNT);
         right.add(left);
@@ -295,27 +273,23 @@ public:
         right.copyFrom(left);
 #endif
 
-#ifdef OVERSAMPLE_FACTOR
-        upsampler_fm->process(left, oversample_buf->getSamples(1));
-        AudioBuffer& audio_buf = *oversample_buf;
-#else
-        AudioBuffer& audio_buf = buffer;
-#endif
-        // Generate quadrature output
-        //osc.generate(audio_buf);
-//        osc.generate(audio_buf, audio_buf.getSamples(1));
-        osc.generate(audio_buf, audio_buf.getSamples(0));
-        // phaser->process(audio_buf, audio_buf);
+        osc.generate(buffer, right);
+
+        
+        //biquad->setLowPass(ap_coef * getSampleRate(), 1.0);
+        //biquad->setBandPass(freq * (0.5 + ap_coef * 4.f), 1.0);
+        //biquad->process(buffer, buffer);
 
         float fold = p_fold.getValue() + 1.0;
-        audio_buf.getSamples(0).multiply(fold);
-        audio_buf.getSamples(1).multiply(fold);
-        wavefolder.process(audio_buf, audio_buf);
+        float offset_phase = p_direction.getValue() * M_PI;
+        float offset_mag = p_magnitude.getValue();
+        cmp_offset.setPolar(offset_mag, offset_phase);
 
-#ifdef OVERSAMPLE_FACTOR
-        downsampler_left->process(oversample_buf->getSamples(0), left);
-        downsampler_right->process(oversample_buf->getSamples(1), right);
-#endif
+        buffer.getSamples(0).multiply(fold + abs(cmp_offset.re));
+        buffer.getSamples(1).multiply(fold + abs(cmp_offset.im));
+
+        wavefolder.process(buffer, buffer);
+
 #ifndef EXT_FM
         if (ext_env_amt >= 0.5) {
             left.multiply(env_copy);

@@ -36,9 +36,6 @@ public:
         }
         mul = 1.0f / sr;
     }
-    float getSampleRate() override {
-        return 1.0f / mul;
-    }
     void setFrequency(float freq) override {
         for (size_t i = 0; i < num_oscillators; i++){
             oscillators[i]->setFrequency(freq);
@@ -52,40 +49,26 @@ public:
         for (size_t i = 0; i < num_oscillators; i++){
             oscillators[i]->setPhase(phase);
         }         
-        this->phase = phase / (M_PI * 2.0);
+        this->phase = phase;
     }
     float getPhase() override {
-        return phase * 2.0 * M_PI;
+        return phase;
     }
     void setMorph(float morph){
         morph *= (num_oscillators - 1);
-        size_t morph_new = size_t(morph);
-        if (morph_idx != morph_new){
-            // Index changed
-            if (morph_idx + 1 != morph_new) {
-                // Don't reset if we changed to previously active voice
-                oscillators[morph_new + 1]->setPhase(getPhase());
-            }
-            if (morph_idx != morph_new + 1)
-                oscillators[morph_new]->setPhase(getPhase());
-            morph_idx = morph_new;
-        }
-        morph_frac = morph - float(morph_new);
+        morph_idx = size_t(morph);
+        oscillators[morph_idx]->setPhase(phase);
+        oscillators[morph_idx + 1]->setPhase(phase);
+        morph_frac = morph - float(morph_idx);
     }
     float generate() override {
-        phase += nfreq;
-        while (phase >= 1.0) {
-            phase -= 1.0;
-        }
         float sample_a = oscillators[morph_idx]->generate();
         float sample_b = oscillators[morph_idx + 1]->generate();
+        phase = oscillators[morph_idx]->getPhase();
         return sample_a + (sample_b - sample_a) * morph_frac;
     }
     virtual void generate(FloatArray output) override {
-        phase += nfreq * output.getSize();
-        while (phase >= 1.0) {
-            phase -= 1.0;
-        }
+        // TODO
         for (size_t i = 0; i < output.getSize(); i++){
             output[i] = generate();
         }
@@ -93,11 +76,7 @@ public:
     float generate(float fm) override {        
         float sample_a = oscillators[morph_idx]->generate(fm);
         float sample_b = oscillators[morph_idx + 1]->generate(fm);
-        phase += fm;
-        phase += nfreq;
-        while (phase >= 1.0) {
-            phase -= 1.0;
-        }        
+        phase = oscillators[morph_idx]->getPhase();
         return sample_a + (sample_b - sample_a) * morph_frac;
     }
     bool addOscillator(Oscillator* osc){
