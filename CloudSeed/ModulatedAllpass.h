@@ -11,6 +11,7 @@ namespace CloudSeed
 	class ModulatedAllpass
 	{
 	public:
+	// TODO: remove hardcode
 		const int DelayBufferSamples = 19200; // 100ms at 192Khz
 		static const int ModulationUpdateRate = 8;
 
@@ -150,7 +151,7 @@ namespace CloudSeed
 			if (modPhase > 1)
 				modPhase = std::fmod(modPhase, 1.0);
 
-			auto mod = FastSin::Get(modPhase);
+			auto mod = sin(modPhase);
 
 			if (ModAmount >= SampleDelay) // don't modulate to negative value
 				ModAmount = SampleDelay - 1;
