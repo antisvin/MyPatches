@@ -48,6 +48,13 @@ public:
         return antialiasedClipN1(input);
     }
 
+    void process(FloatArray input, FloatArray output) {
+        for (size_t i = 0; i < input.getSize(); i++) {
+            output[i] = process(input[i]);
+        }
+    }
+
+
     void reset() {
         xn1 = 0.0f;
         Fn = 0.0f;
@@ -118,49 +125,37 @@ public:
 
 class CubicClipper : public AbstractClipper {
 public:
+
     float clipN0(float x) override {
-        float t = signum(x + 1.0f) * (x + 1.0f) - signum(x - 1.0f) * (x - 1.0f);
-        return t * (0.75 - 0.0625 * t * t);
-        /*
-        if (std::abs(x) < 1) {
-            return (1.5f - 0.5f * x * x) * x;
+        if (abs(x) >= 1.f) {
+            return signum(x);
+//            return 2.f / 3.f * signum(x);
         }
         else {
-            return signum(x);
+            return 1.5f * x - x * x * x / 2.f;
+//            return x - x * x * x / 3.f;
         }
-        */
-        /*
-        if (std::abs(x) < 1) {
-            return (1.5f - 0.5f * x * x) * x;
-        }
-        else {
-            return signum(x);
-        }
-        */
     }
 
     float clipN1(float x) override {
-        // float t1 = signum(x + 1.0f) * (x + 1.0f) * (x + 1.0f);
-        // float t2 = signum(x + 1.0f) * (x + 1.0f) * (x - 1.0f);
-        // return 0.375 * (t1 - t2) - 0.0375 * (t1 - t2) * (t1 - t2) * (t1 - t2);
-
-        if (abs(x) < 1) {
-            float sqr_x = x * x;
-            return (0.75f - 0.125f * sqr_x) * sqr_x;
-            /// return sqr_x * x - 0.05 * sqr_x * sqr_x * x;
+        if (abs(x) >= 1.f) {
+//        if (abs(x) >= 2.f / 3.f) {
+            return x * signum(x) - 0.5f; // abs(x) - 0.5 ?
         }
         else {
-            return signum(x) * x;
+            0.75f * x * x - x * x * x * x / 8.f;
+//            return x * x / 2.f - x * x * x * x / 12.f;
         }
     }
 
     float clipN2(float x) override {
-        if (abs(x) < 1) {
-            float sqr_x = x * x;
-            return 0.25 * sqr_x * x - 0.025 * sqr_x * sqr_x * x;
+        if (abs(x) >= 1.f) {
+            return (0.5f * x * x - onesixths) * signum(x);
+//            return x * abs(x) / 3.f;
         }
         else {
-            return onesixths * signum(x) * x * x;
+            return x * x * x / 4.f - x * x * x * x / 40.f;
+//            return onesixth * x * x * x  -  x * x * x * x * x / 60.f;
         }
     }
 };

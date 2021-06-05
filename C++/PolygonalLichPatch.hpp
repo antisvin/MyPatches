@@ -219,6 +219,7 @@ public:
     }
 
     void processAudio(AudioBuffer& buffer) {
+        lockAll();
 
         // CV output
         processAttractor(getParameterValue(PARAMETER_AF));

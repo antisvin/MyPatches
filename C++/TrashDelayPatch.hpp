@@ -38,12 +38,18 @@
 #include "SmoothValue.h"
 #include "DryWetProcessor.h"
 
+//#define FAST_FRAC
+//#define USE_TRANSITION_LUT
+
 // static constexpr float max_delay_seconds = 10.f; // OWL2+
 static constexpr float max_delay_seconds = 2.7f; // Just enough for OWL1
 static constexpr float max_feedback = 0.75f;
 
-//using Processor = FastFractionalDelayProcessor;
-using Processor = FractionalDelayProcessor<HERMITE_INTERPOLATION>;
+#ifdef FAST_FRAC
+using Processor = FastFractionalDelayProcessor;
+#else
+using Processor = FractionalDelayProcessor<LINEAR_INTERPOLATION>;
+#endif
 using SawOscillator = RampOscillator<>;
 
 /**
@@ -57,43 +63,44 @@ enum DelayState {
     DS_LOOP,
 };
 
-static constexpr float fade_in_lut[64] = { 0.12403473458920845,
-    0.17541160386140583, 0.21483446221182986, 0.2480694691784169,
-    0.2773500981126146, 0.3038218101251, 0.3281650616569468, 0.35082320772281167,
-    0.3721042037676254, 0.3922322702763681, 0.41137667560372115, 0.4296689244236597,
-    0.4472135954999579, 0.4640954808922571, 0.4803844614152614, 0.4961389383568338,
-    0.5114083119567588, 0.5262348115842176, 0.5406548735632486, 0.5547001962252291,
-    0.5683985600588051, 0.5817744738827396, 0.5948496901286525, 0.6076436202502,
-    0.6201736729460423, 0.6324555320336759, 0.6445033866354896, 0.6563301233138936,
-    0.6679474875720741, 0.6793662204867574, 0.6905961749988752, 0.7016464154456233,
-    0.7125253031944253, 0.723240570679579, 0.7337993857053428, 0.7442084075352507,
-    0.7544738360147217, 0.7646014547562571, 0.7745966692414834, 0.7844645405527362,
-    0.7942098153317112, 0.8038369524685004, 0.8133501469468494, 0.8227533512074423,
-    0.8320502943378437, 0.8412444993533733, 0.8503392987960294, 0.8593378488473195,
-    0.8682431421244592, 0.8770580193070292, 0.8857851797221404, 0.8944271909999159,
-    0.9029864978971809, 0.9114654303753, 0.9198662110077999, 0.9281909617845142,
-    0.936441710371274, 0.9446203958774616, 0.9527288741779099, 0.9607689228305228,
-    0.9687422456265332, 0.9766504768063925, 0.9844951849708404, 0.9922778767136676
+#ifdef USE_TRANSITION_LUT
+static constexpr float fade_in_lut[64] = { 0.0, 0.125, 0.1767766952966369,
+    0.21650635094610965, 0.25, 0.2795084971874737, 0.30618621784789724,
+    0.33071891388307384, 0.3535533905932738, 0.375, 0.39528470752104744,
+    0.414578098794425, 0.4330127018922193, 0.45069390943299864,
+    0.46770717334674267, 0.4841229182759271, 0.5, 0.5153882032022076,
+    0.5303300858899106, 0.5448623679425842, 0.5590169943749475, 0.57282196186948,
+    0.5863019699779287, 0.5994789404140899, 0.6123724356957945, 0.625,
+    0.6373774391990981, 0.649519052838329, 0.6614378277661477, 0.673145600891813,
+    0.6846531968814576, 0.6959705453537527, 0.7071067811865476,
+    0.7180703308172536, 0.7288689868556626, 0.739509972887452, 0.75,
+    0.7603453162872774, 0.770551750371122, 0.7806247497997998,
+    0.7905694150420949, 0.8003905296791061, 0.8100925873009825, 0.81967981553775,
+    0.82915619758885, 0.8385254915624212, 0.8477912478906585, 0.8569568250501305,
+    0.8660254037844386, 0.875, 0.8838834764831844, 0.8926785535678563,
+    0.9013878188659973, 0.9100137361600648, 0.9185586535436918, 0.9270248108869579,
+    0.9354143466934853, 0.9437293044088437, 0.9519716382329886, 0.960143218483576,
+    0.9682458365518543, 0.9762812094883317, 0.9842509842514764, 0.9921567416492215
 
 };
 
-static constexpr float fade_out_lut[64] = { 0.9922778767136676, 0.9844951849708404,
-    0.9766504768063925, 0.9687422456265332, 0.9607689228305228, 0.9527288741779099,
-    0.9446203958774616, 0.936441710371274, 0.9281909617845142, 0.9198662110077999,
-    0.9114654303753, 0.9029864978971809, 0.8944271909999159, 0.8857851797221404,
-    0.8770580193070292, 0.8682431421244592, 0.8593378488473195, 0.8503392987960294,
-    0.8412444993533733, 0.8320502943378437, 0.8227533512074423, 0.8133501469468494,
-    0.8038369524685004, 0.7942098153317112, 0.7844645405527362, 0.7745966692414834,
-    0.7646014547562571, 0.7544738360147217, 0.7442084075352507, 0.7337993857053428,
-    0.723240570679579, 0.7125253031944253, 0.7016464154456233, 0.6905961749988752,
-    0.6793662204867574, 0.6679474875720741, 0.6563301233138936, 0.6445033866354896,
-    0.6324555320336759, 0.6201736729460423, 0.6076436202502, 0.5948496901286525,
-    0.5817744738827396, 0.5683985600588051, 0.5547001962252291, 0.5406548735632486,
-    0.5262348115842176, 0.5114083119567588, 0.4961389383568338, 0.4803844614152614,
-    0.4640954808922571, 0.4472135954999579, 0.4296689244236597, 0.41137667560372115,
-    0.3922322702763681, 0.3721042037676254, 0.35082320772281167,
-    0.3281650616569468, 0.3038218101251, 0.2773500981126146, 0.2480694691784169,
-    0.21483446221182986, 0.17541160386140583, 0.12403473458920845 };
+static constexpr float fade_out_lut[64] = { 0.9921567416492215, 0.9842509842514764,
+    0.9762812094883317, 0.9682458365518543, 0.960143218483576, 0.9519716382329886,
+    0.9437293044088437, 0.9354143466934853, 0.9270248108869579, 0.9185586535436918,
+    0.9100137361600648, 0.9013878188659973, 0.8926785535678563, 0.8838834764831844,
+    0.875, 0.8660254037844386, 0.8569568250501305, 0.8477912478906585,
+    0.8385254915624212, 0.82915619758885, 0.81967981553775, 0.8100925873009825,
+    0.8003905296791061, 0.7905694150420949, 0.7806247497997998, 0.770551750371122,
+    0.7603453162872774, 0.75, 0.739509972887452, 0.7288689868556626,
+    0.7180703308172536, 0.7071067811865476, 0.6959705453537527, 0.6846531968814576,
+    0.673145600891813, 0.6614378277661477, 0.649519052838329, 0.6373774391990981,
+    0.625, 0.6123724356957945, 0.5994789404140899, 0.5863019699779287,
+    0.57282196186948, 0.5590169943749475, 0.5448623679425842, 0.5303300858899106,
+    0.5153882032022076, 0.5, 0.4841229182759271, 0.46770717334674267,
+    0.45069390943299864, 0.4330127018922193, 0.414578098794425, 0.39528470752104744,
+    0.375, 0.3535533905932738, 0.33071891388307384, 0.30618621784789724,
+    0.2795084971874737, 0.25, 0.21650635094610965, 0.1767766952966369, 0.125, 0.0 };
+#endif
 
 template <class Processor = Processor>
 class FbDelay : public Processor {
@@ -111,10 +118,15 @@ public:
         , frozen(false)
         , freeze_index(0)
         , delay_size(0)
+        , old_delay_size(0)
+        , needs_crossfade(false)
         , state(DS_FADE_DELAY) {
     }
-    void setDelay(size_t delay) {
+    void setDelay(float delay) {
+        old_delay_size = delay_size;
         delay_size = delay;
+        if (abs(delay_size - old_delay_size) > 4.f)
+            needs_crossfade = true;
     }
     void setFeedback(float amount) {
         feedback_amount = amount;
@@ -150,8 +162,6 @@ public:
     static FbDelay* create(size_t blocksize, Args&&... args) {
         return new FbDelay<Processor>(FloatArray::create(blocksize),
             FloatArray::create(blocksize), std::forward<Args>(args)...);
-//        return new FbDelay<Processor>(FloatArray::create(blocksize),
-//            FloatArray::create(blocksize), std::forward<Args>(args)...);
     }
     static void destroy(FbDelay* obj) {
         FloatArray::destroy(obj->feedback_buffer);
@@ -170,101 +180,129 @@ protected:
     float feedback_amount;
     DcBlockingFilter dc, dc_fb;
     bool frozen;
+    bool needs_crossfade;
+    float old_delay_size;
     bool triggered;
-    size_t delay_size;
+    float delay_size;
     size_t freeze_index;
 
     SmoothFloat smooth_delay;
     float stepped_delay;
 
     inline void fadeIn(FloatArray data) {
+#ifdef USE_TRANSITION_LUT
         size_t size = data.getSize();
         for (size_t i = 0; i < size; i++) {
             data[i] *= fade_in_lut[i];
         }
-        //        data.scale(0.f, 1.f, data);
+#else
+        data.scale(0.f, 1.f, data);
+#endif
     }
     inline void fadeIn(FloatArray input, FloatArray output) {
+#ifdef USE_TRANSITION_LUT
         size_t size = input.getSize();
         for (size_t i = 0; i < size; i++) {
             output[i] = input[i] * fade_in_lut[i];
         }
-        //        input.scale(0.f, 1.f, output);
+#else
+        input.scale(0.f, 1.f, output);
+#endif
     }
     inline void fadeOut(FloatArray data) {
+#ifdef USE_TRANSITION_LUT
         size_t size = data.getSize();
         for (size_t i = 0; i < size; i++) {
             data[i] *= fade_out_lut[i];
         }
-        //        data.scale(1.f, 0.f, data);
+#else
+        data.scale(1.f, 0.f, data);
+#endif
     }
     inline void fadeOut(FloatArray input, FloatArray output) {
+#ifdef USE_TRANSITION_LUT
         size_t size = input.getSize();
         for (size_t i = 0; i < size; i++) {
             output[i] = input[i] * fade_out_lut[i];
         }
-        //        input.scale(1.f, 0.f, output);
+#else
+        input.scale(1.f, 0.f, output);
+#endif
     }
 
     void renderFadeDelay(FloatArray input, FloatArray output) {
-        // Fade in feedback buffer - conains last buffer from looper
-        fadeIn(input);
-        // input.scale(0.0, 1.0, input);
-        // Delay processing - feedback buffer is empty at the moment
-
         // Refetch previous buffer to be used as feedback
         size_t buffer_size = Processor::buffer.getSize();
         size_t size = input.getSize();
-        Processor::buffer.moveReadHead(buffer_size - size);
-        Processor::buffer.read(feedback_buffer.getData(), size);
-        // fadeOut(feedback_buffer);
 
-        // Resume rendering with old feedback
-        renderDelay(input, output);
+        Processor::setDelay(delay_size);
+        Processor::buffer.setDelay(delay_size - size);
+        Processor::buffer.delay(output.getData(), size, delay_size);
+
         fadeIn(output);
-        feedback_buffer.copyFrom(output);
+
         output.add(fade_buffer);
-        // Store feedback
-        // feedback_buffer.scale(0.0, 1.0, feedback_buffer);
-        // fadeIn(feedback_buffer);
+        feedback_buffer.copyFrom(output);
         state = DS_DELAY;
     }
 
     void renderDelay(FloatArray input, FloatArray output) {
-        // Delay feedback FX
+        // Feedback processing
         crusher.process(feedback_buffer, feedback_buffer);
         reducer.process(feedback_buffer, feedback_buffer);
         dc_fb.process(feedback_buffer, feedback_buffer);
-        // Apply feedback amount
         feedback_buffer.multiply(feedback_amount);
         input.add(feedback_buffer);
         // Delay processing
         size_t size = input.getSize();
-        //Processor::setDelay(delay_size);
-        #if 0
-        for (size_t i = 0; i < size; i++) {
-            //smooth_delay.update(stepped_delay);
-            //delay_size = smooth_delay.getValue();
-            //Processor::setDelay(delay_size);
-            output[i] = Processor::process(input[i]);
-        }
-        #endif
-        Processor::smooth(input, output, delay_size);
+        if (needs_crossfade) {
+//            Processor::smooth(input, fade_buffer, old_delay_size);
+            Processor::process(input, fade_buffer);
+            fadeOut(fade_buffer);
+            needs_crossfade = false;
+            renderFadeDelay(input, output);
 
-        if (frozen) {
-            fadeOut(output, fade_buffer);
+/*
+            size_t buffer_size = Processor::buffer.getSize();
+
+            //Processor::buffer.read(output.getData(), size);
+            Processor::setDelay(delay_size);
+            //Processor::buffer.read(output.getData(), size);
+            Processor::buffer.delay(output.getData(), size, delay_size);
+
+            fadeIn(output);
+            feedback_buffer.copyFrom(output);
+            output.add(fade_buffer);
+
+            needs_crossfade = false;
+*/
+        }
+        else if (frozen) {
+            fadeOut(input);
+            Processor::process(input, fade_buffer);
+            fadeOut(fade_buffer);
+
+
+            //fadeOut(output, fade_buffer);
 
             // Store faded out buffer
             size_t buffer_size = Processor::buffer.getSize();
-            Processor::buffer.moveWriteHead(buffer_size - size);
-            Processor::buffer.write(fade_buffer.getData(), size);
+            //Processor::buffer.write(fade_buffer.getData(), size);
+            /// XXX 1
+            //Processor::buffer.moveWriteHead(buffer_size - size);
+            //Processor::buffer.write(fade_buffer.getData(), size);
 
-            // feedback_buffer.scale(1.0, 0.0, fade_buffer);
-            // output.copyFrom(fade_buffer);
+            /// XXX2
+//            freeze_index = Processor::buffer.getReadIndex();
+                
             freeze_index =
-                (Processor::buffer.getWriteIndex() + buffer_size - delay_size) %
-                buffer_size;
+                fmodf(Processor::buffer.getReadIndex() + buffer_size - delay_size,
+                    buffer_size);
             Processor::buffer.setReadIndex(freeze_index);
+//            freeze_index =
+//                fmodf(Processor::buffer.getWriteIndex() + buffer_size - delay_size,
+//                    buffer_size);
+//            Processor::buffer.setReadIndex(freeze_index);
             renderFadeLoop(input, output);
 #if 0            
             feedback_buffer.scale(1.0, 0.0, fade_buffer);
@@ -277,6 +315,10 @@ protected:
 #endif
         }
         else {
+
+            //Processor::process(input, output);
+            Processor::smooth(input, output, delay_size);
+
             // Store feedback
             feedback_buffer.copyFrom(output);
         }
@@ -290,6 +332,13 @@ protected:
         // Frozen delay won't write to buffer, input is discarded
         Processor::buffer.read(output.getData(), output.getSize());
 
+#if 0
+        Processor::setDelay(delay_size);
+        Processor::buffer.setDelay(delay_size - size);
+        Processor::buffer.delay(output.getData(), size, delay_size);
+#endif
+
+
         // output.scale(0.0, 1.0, output);
         fadeIn(output);
         output.add(fade_buffer);
@@ -299,8 +348,6 @@ protected:
         reducer.process(output, output);
         // dc_fb.process(output, output);
 
-        // Feedback is not heard, but we prepare buffer for exiting this
-        // mode or retriggering feedback_buffer.copyFrom(output);
         state = DS_LOOP;
     }
 
@@ -310,14 +357,14 @@ protected:
 
         // Triggered manually or reached frozen buffer end
         if (triggered ||
-            ((Processor::buffer.getReadIndex() + buffer_size + size * 2 - freeze_index) % buffer_size >
-                delay_size)) {
+            fmodf(Processor::buffer.getReadIndex() + buffer_size + size - freeze_index,
+                buffer_size) > delay_size) {
             triggered = false;
             // Read buffer tail
             Processor::buffer.read(fade_buffer.getData(), size);
-            Processor::buffer.setReadIndex(freeze_index);
+            //Processor::setDelay(buffer_size + delay_size);
+
             // Prepare fade out buffer
-            // fade_buffer.scale(1.0, 0.0, fade_buffer);
             fadeOut(fade_buffer);
 
             if (frozen) {
@@ -328,10 +375,12 @@ protected:
                 // Exiting looper mode - only done when looper reaches end.
                 // Alternatives would require jumping to different place in
                 // buffer or dropping part of buffer. Update write index
-                Processor::buffer.setWriteIndex(freeze_index + delay_size);
+                //Processor::buffer.setWriteIndex(freeze_index + delay_size);
+                ///Processor::buffer.setWriteIndex(Processor::buffer.getReadIndex());
+                ///Processor::buffer.setReadIndex(Processor::buffer.getReadIndex() + buffer_size - size);
+                ///Processor::buffer.read()
                 // Unfreeze delay
-                state = DS_FADE_DELAY;
-                // feedback_buffer.copyFrom(fade_buffer); // XXX?
+                fadeOut(feedback_buffer, fade_buffer);
                 renderFadeDelay(input, output);
             }
         }
@@ -339,14 +388,15 @@ protected:
             // Normal looper processing
             // Frozen delay doesn't write to buffer, input is discarded
             Processor::buffer.read(output.getData(), size);
-            //feedback_buffer.multiply(feedback_amount);
-            //output
-                // Processor::buffer.setWriteIndex(
-                //    Processor::buffer.getReadIndex() + delay_size);
-                // Looper FX
-                crusher.process(output, output);
+            // feedback_buffer.multiply(feedback_amount);
+            // output
+            // Processor::buffer.setWriteIndex(
+            //    Processor::buffer.getReadIndex() + delay_size);
+            // Looper FX
+            crusher.process(output, output);
             reducer.process(output, output);
             // dc.process(output, output);
+            feedback_buffer.copyFrom(output);
         }
     }
 };
@@ -364,6 +414,8 @@ public:
     SineOscillator* lfo1;
     SawOscillator* lfo2;
     bool frozen;
+    float delay_samples;
+    //    SmoothFloat delay_samples;
 
     TrashDelayPatch() {
         max_delay_samples = max_delay_seconds * getSampleRate();
@@ -381,18 +433,29 @@ public:
         setButton(BUTTON_B, 0);
         setButton(BUTTON_C, 0);
 
+        // delay_samples.lambda = 0.96;
+
         lfo1 = SineOscillator::create(getSampleRate() / getBlockSize());
         lfo2 = SawOscillator::create(getSampleRate() / getBlockSize());
         tempo = AdjustableTapTempo::create(getSampleRate(), max_delay_samples);
         tempo->setSamples(max_delay_samples);
+#ifdef FAST_FRAC
+        delay1 = MixDelay::create(getBlockSize(), FloatArray::create(getBlockSize()),
+            FloatArray::create(getBlockSize()), new float[max_delay_samples + 1],
+            new float[max_delay_samples + 1], max_delay_samples);
+        delay2 = MixDelay::create(getBlockSize(), FloatArray::create(getBlockSize()),
+            FloatArray::create(getBlockSize()), new float[max_delay_samples + 1],
+            new float[max_delay_samples + 1], max_delay_samples);
+#else
         delay1 = MixDelay::create(getBlockSize(),
             FloatArray::create(getBlockSize()), FloatArray::create(getBlockSize()),
-            new float[max_delay_samples + 4], max_delay_samples);
-        delay1->setMix(0.5);
-        delay1->setFeedback(0.5);
+            new float[max_delay_samples + 1], max_delay_samples);
         delay2 = MixDelay::create(getBlockSize(),
             FloatArray::create(getBlockSize()), FloatArray::create(getBlockSize()),
-            new float[max_delay_samples + 4], max_delay_samples);
+            new float[max_delay_samples + 1], max_delay_samples);
+#endif
+        delay1->setMix(0.5);
+        delay1->setFeedback(0.5);
         delay2->setMix(0.5);
         delay2->setFeedback(0.5);
     }
@@ -432,10 +495,10 @@ public:
         // Tap tempo
         tempo->clock(buffer.getSize());
         tempo->adjust((1.f - getParameterValue(PARAMETER_A)) * 4096);
-        float period = tempo->getSamples();
-        if (period > max_delay_samples) {
-            period = max_delay_samples;
-        }
+        delay_samples = min(tempo->getSamples(), max_delay_samples);
+        // if (delay_samples > max_delay_samples) {
+        //            delay_samples.reset(max_delay_samples);
+        //}
 
         // Use quadratic crush factor
         float crush = 1.f - getParameterValue(PARAMETER_C);
@@ -453,11 +516,11 @@ public:
         FloatArray left = buffer.getSamples(0);
         delay1->setFeedback(fb);
         delay1->process(left, left);
-        delay1->setDelay(period);
+        delay1->setDelay(delay_samples);
         FloatArray right = buffer.getSamples(1);
         delay2->setFeedback(fb);
         delay2->process(right, right);
-        delay2->setDelay(period);
+        delay2->setDelay(delay_samples);
 
         // Tempo synced LFO
         lfo1->setFrequency(tempo->getFrequency());
