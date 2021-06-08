@@ -33,6 +33,8 @@
  * - param C sets wavefolding vector direction for second wavefolder
  * - param D adds wavefolding gain
  * 
+ * Parameters F and G can be used as outputs for modulation
+ * 
  * Audio input 1 is pitch CV, input 2 is FM. Pitch CV can be quantized if you
  * rebuild patch with quantizer enabled.
  **/
