@@ -28,7 +28,7 @@
  * towards one of the corners.
  * 
  * Submenu 2 includes 2 wavefolders:
- * - param B sets order for distortion based on Chebyshev polynomials. This can
+ * - param B sets order for non-linear distortion based on Chebyshev polynomials. This can
  * radically change oscillator shape. See https://en.wikipedia.org/wiki/Chebyshev_polynomials
  * - param C sets wavefolding vector direction for second wavefolder
  * - param D adds wavefolding gain
@@ -37,10 +37,7 @@
  * rebuild patch with quantizer enabled.
  **/
 
-#include "MultiOscillator.hpp"
 #include "SineOscillator.h"
-#include "SquareOscillator.hpp"
-#include "TriangleOscillator.hpp"
 #include "VoltsPerOctave.h"
 #include "Quantizer.hpp"
 #include "LockableValue.hpp"
@@ -54,9 +51,10 @@
 
 #define BASE_FREQ 55.f
 #define MAX_FM_AMOUNT 0.1f
-//#define EXT_FM
 #define MAX_RATIO 16
 #define CHEB_ORDER 6
+//#define OVERSAMPLE_FACTOR 2
+
 
 //#define QUANTIZER Quantizer12TET
 // Uncomment to quantize
@@ -78,33 +76,22 @@ using SmoothParam = LockableValue<SmoothValue<float>, float>;
 using StiffParam = LockableValue<StiffValue<float>, float>;
 using RatioQuantizer = Quantizer<MAX_RATIO, true>;
 
-class ModOscillator : public MultiOscillator {
-public:
-    ModOscillator(float freq, float sr = 48000)
-        : MultiOscillator(3, freq, sr)
-        , osc0(freq, sr)
-        , osc1(freq, sr)
-        , osc2(freq, sr) {
-        addOscillator(&osc0);
-        addOscillator(&osc1);
-        addOscillator(&osc2);
-    }
-
-private:
-    SquareOscillator osc0;
-    SineOscillator osc1;
-    TriangleOscillator osc2;
-};
-
+#ifdef OVERSAMPLE_FACTOR
+    //UpSampler* upsampler_pitch;
+    UpSampler* upsampler_fm;
+    DownSampler* downsampler_left;
+    DownSampler* downsampler_right;
+    AudioBuffer* oversample_buf;
+#endif
 
 using StereoWavefolder = MultiProcessor<Wavefolder<HardClipper>, 2>;
 using StereoCheb = MultiProcessor<MorphingChebyshevPolynomial<false>, 2>;
 using StereoDc = MultiProcessor<DcBlockingFilter, 2>;
 
+
 class RoseLichPatch : public Patch {
 private:
     RoseOscillator osc;
-    ModOscillator mod;
     SineOscillator mod_lfo;
     DcBlockingFilter dc_fm;
 
@@ -117,6 +104,13 @@ private:
     ComplexFloat sample;
 #ifdef QUANTIZER
     QUANTIZER quantizer;
+#endif
+#ifdef OVERSAMPLE_FACTOR
+    //UpSampler* upsampler_pitch;
+    UpSampler* upsampler_fm;
+    DownSampler* downsampler_left;
+    DownSampler* downsampler_right;
+    AudioBuffer* oversample_buf;
 #endif
     bool isModeA = false, isModeB = false;
     float fm_ratio;
@@ -137,16 +131,15 @@ private:
     SmoothParam p_fold = SmoothParam(0.01);
     SmoothParam p_direction = SmoothParam(0.01);
     SmoothParam p_magnitude = SmoothParam(0.01);
-    FloatArray env_copy;
-    inline float crossfade(float a, float b, float fade) {
-        return a * fade + b * (1 - fade);
-    }
 
 public:
     RoseLichPatch()
         : mod_lfo(0.75, getSampleRate() / getBlockSize())
+#ifdef OVERSAMPLE_FACTOR
+        , osc(BASE_FREQ, getSampleRate() * OVERSAMPLE_FACTOR)
+#else
         , osc(BASE_FREQ, getSampleRate())
-        , mod(BASE_FREQ, getSampleRate())
+#endif
     {
         registerParameter(P_TUNE, "Tune");
         setParameterValue(P_TUNE, 0.5f);
@@ -154,14 +147,16 @@ public:
         registerParameter(P_MULT, "Multiplier");
         registerParameter(P_DIV, "Divisor");
         registerParameter(P_FEEDBACK1, "Feedback1");
-        setParameterValue(P_FEEDBACK1, 0.f);
-        registerParameter(P_FB2_MAG, "Feedbaack2 Magnitude");
-        registerParameter(P_FB2_DIR, "Feedbaack2 Phase");        
+        setParameterValue(P_FEEDBACK1, 0.5f);
+        registerParameter(P_FB2_MAG, "Feedback2 Magnitude");
+        setParameterValue(P_FB2_MAG, 0.f);
+        registerParameter(P_FB2_DIR, "Feedback2 Phase");        
+        setParameterValue(P_FB2_DIR, 0.f);
         registerParameter(P_FOLD, "Chebyshaper");
         setParameterValue(P_FOLD, 0.f);
-        registerParameter(P_DIR, "Direction");
+        registerParameter(P_DIR, "Fold Direction");
         setParameterValue(P_DIR, 0.f);
-        registerParameter(P_MAG, "Offset");
+        registerParameter(P_MAG, "Fold Magntitude");
         setParameterValue(P_MAG, 0.f);
         registerParameter(P_CHAOS_X, "ChaosX>");
         registerParameter(P_CHAOS_LFO, "ChaoLFO>");
@@ -172,9 +167,17 @@ public:
         p_harmonics.rawValue().lambda = 0.96;
         p_fb_direction.rawValue().lambda = 0.96;
         p_fb_magnitude.rawValue().lambda = 0.96;
-        p_fold.rawValue().lambda = 0.99;
+        p_fold.rawValue().lambda = 0.96;
         p_direction.rawValue().lambda = 0.96;
         p_magnitude.rawValue().lambda = 0.96;
+
+#ifdef OVERSAMPLE_FACTOR
+        //upsampler_pitch = UpSampler::create(1, OVERSAMPLE_FACTOR);
+        upsampler_fm = UpSampler::create(1, OVERSAMPLE_FACTOR);
+        downsampler_left = DownSampler::create(1, OVERSAMPLE_FACTOR);
+        downsampler_right = DownSampler::create(1, OVERSAMPLE_FACTOR);
+        oversample_buf = AudioBuffer::create(2, getBlockSize() * OVERSAMPLE_FACTOR);
+#endif
 
         setButton(BUTTON_A, false, 0);
         setButton(BUTTON_B, false, 0);
@@ -186,6 +189,13 @@ public:
     }
 
     ~RoseLichPatch() {
+#ifdef OVERSAMPLE_FACTOR
+        //UpSampler::destroy(upsampler_pitch);
+        UpSampler::destroy(upsampler_fm);
+        DownSampler::destroy(downsampler_left);
+        DownSampler::destroy(downsampler_right);
+        AudioBuffer::destroy(oversample_buf);
+#endif
     }
 
     void lockAll() {
@@ -299,18 +309,28 @@ public:
         osc.setFeedback1(p_feedback.getValue());
         osc.setFeedback2(p_fb_magnitude.getValue(), p_fb_direction.getValue() * M_PI * 4.f);
 
-//        right.multiply(ext_fm_amt * MAX_FM_AMOUNT);
-        right.add(left);
+        //right.add(left);
 
-        osc.generate(buffer, right);
-        
+#ifdef OVERSAMPLE_FACTOR
+        upsampler_fm->process(right, oversample_buf->getSamples(1));
+        AudioBuffer& audio_buf = *oversample_buf;
+#else
+        AudioBuffer& audio_buf = buffer;
+#endif
+        osc.generate(audio_buf, audio_buf.getSamples(1));
+
         // Chebyshev wavefolder
         float fold = p_fold.getValue();
         cheb.get(0).setMorph(fold);
         cheb.get(1).setMorph(fold);
-        cheb.process(buffer, buffer);
+        cheb.process(audio_buf, audio_buf);
 
-        // Complex wavefolder
+#ifdef OVERSAMPLE_FACTOR
+        downsampler_left->process(oversample_buf->getSamples(0), left);
+        downsampler_right->process(oversample_buf->getSamples(1), right);
+#endif
+
+        // Complex wavefolder - oversampling is not necessary, algo suppresses aliasing
         float offset_phase = p_direction.getValue() * M_PI;
         float offset_mag = p_magnitude.getValue() * 3;
         cmp_offset.setPolar(offset_mag, offset_phase);

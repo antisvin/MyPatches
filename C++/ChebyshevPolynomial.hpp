@@ -37,8 +37,8 @@ float ChebyshevPolynomial<false>::process(float input) {
         float t;
         for (size_t i = 2; i <= order; i++) {
             t = 2.f * t1 * input - t2;
-            t1 = t;
             t2 = t1;
+            t1 = t;
         }
         return t;
     }
@@ -48,7 +48,7 @@ float ChebyshevPolynomial<false>::process(float input) {
 template<bool use_trigonometry=false>
 class MorphingChebyshevPolynomial : public SignalProcessor {
 public:
-    void setOffset(float offset) {
+    void setOffset(size_t offset) {
         this->offset = offset;
     }
     void setMaxOrder(size_t order) {
@@ -77,7 +77,7 @@ public:
 private:
     float morph_frac = 0.f;
     float max_order = 0;
-    float offset = 0;
+    size_t offset = 0;
     ChebyshevPolynomial<use_trigonometry> cheby1, cheby2;
 };
 #endif
