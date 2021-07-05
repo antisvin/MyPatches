@@ -125,7 +125,7 @@ public:
     void setDelay(float delay) {
         old_delay_size = delay_size;
         delay_size = delay;
-        if (abs(delay_size - old_delay_size) > 4.f)
+        if (abs(delay_size - old_delay_size) > 32.f)
             needs_crossfade = true;
     }
     void setFeedback(float amount) {
@@ -255,6 +255,11 @@ protected:
         input.add(feedback_buffer);
         // Delay processing
         size_t size = input.getSize();
+        if (triggered) {
+            freeze_index = Processor::buffer.getReadIndex();
+//            freeze_index = Processor::buffer.getWriteIndex();
+            triggered = false;
+        }
         if (needs_crossfade) {
 //            Processor::smooth(input, fade_buffer, old_delay_size);
             Processor::process(input, fade_buffer);
@@ -295,14 +300,14 @@ protected:
             /// XXX2
 //            freeze_index = Processor::buffer.getReadIndex();
                 
-            freeze_index =
-                fmodf(Processor::buffer.getReadIndex() + buffer_size - delay_size,
-                    buffer_size);
-            Processor::buffer.setReadIndex(freeze_index);
-//            freeze_index =
-//                fmodf(Processor::buffer.getWriteIndex() + buffer_size - delay_size,
-//                    buffer_size);
-//            Processor::buffer.setReadIndex(freeze_index);
+            //freeze_index =
+            //    fmodf(Processor::buffer.getReadIndex() + buffer_size - delay_size,
+            //        buffer_size);
+
+            //freeze_index =
+            //    fmodf(Processor::buffer.getWriteIndex() + buffer_size - delay_size,
+            //        buffer_size);
+            //Processor::buffer.setReadIndex(freeze_index);
             renderFadeLoop(input, output);
 #if 0            
             feedback_buffer.scale(1.0, 0.0, fade_buffer);
@@ -325,19 +330,8 @@ protected:
     }
 
     void renderFadeLoop(FloatArray input, FloatArray output) {
-        // Feedback and input will fade out when freeze mode is entered
-        // input.scale(1.0, 0.0, input);
-        // fade_buffer.add(input);
-
         // Frozen delay won't write to buffer, input is discarded
         Processor::buffer.read(output.getData(), output.getSize());
-
-#if 0
-        Processor::setDelay(delay_size);
-        Processor::buffer.setDelay(delay_size - size);
-        Processor::buffer.delay(output.getData(), size, delay_size);
-#endif
-
 
         // output.scale(0.0, 1.0, output);
         fadeIn(output);
@@ -357,8 +351,8 @@ protected:
 
         // Triggered manually or reached frozen buffer end
         if (triggered ||
-            fmodf(Processor::buffer.getReadIndex() + buffer_size + size - freeze_index,
-                buffer_size) > delay_size) {
+            fmodf(Processor::buffer.getReadIndex() + buffer_size - freeze_index,
+                buffer_size) >= delay_size - size) {
             triggered = false;
             // Read buffer tail
             Processor::buffer.read(fade_buffer.getData(), size);
@@ -369,6 +363,9 @@ protected:
 
             if (frozen) {
                 // Rewind loop - no need to change state as it will return to current one
+                //Processor::setDelay(delay_size);
+                //Processor::buffer.setDelay(delay_size - size);
+                Processor::buffer.moveReadHead(buffer_size - delay_size - size);
                 renderFadeLoop(input, output);
             }
             else {
@@ -376,8 +373,8 @@ protected:
                 // Alternatives would require jumping to different place in
                 // buffer or dropping part of buffer. Update write index
                 //Processor::buffer.setWriteIndex(freeze_index + delay_size);
-                ///Processor::buffer.setWriteIndex(Processor::buffer.getReadIndex());
-                ///Processor::buffer.setReadIndex(Processor::buffer.getReadIndex() + buffer_size - size);
+                Processor::buffer.setWriteIndex(Processor::buffer.getReadIndex());
+                Processor::buffer.setReadIndex(Processor::buffer.getReadIndex() + buffer_size - delay_size);
                 ///Processor::buffer.read()
                 // Unfreeze delay
                 fadeOut(feedback_buffer, fade_buffer);
@@ -415,6 +412,7 @@ public:
     SawOscillator* lfo2;
     bool frozen;
     float delay_samples;
+    
     //    SmoothFloat delay_samples;
 
     TrashDelayPatch() {
@@ -483,11 +481,12 @@ public:
             }
             break;
         case BUTTON_B:
-            if (value)
-                frozen = !frozen;
-            setButton(BUTTON_B, frozen, 0);
-            delay1->freeze(frozen);
-            delay2->freeze(frozen);
+//            if (value)
+//                frozen = !frozen;
+//            setButton(BUTTON_B, frozen, 0);
+//            delay1->freeze(frozen);
+//            delay2->freeze(frozen);
+            break;
         }
     }
 
@@ -514,6 +513,7 @@ public:
         // Negative feedback doesn't seem to make things interesting here
         float fb = getParameterValue(PARAMETER_B);
         FloatArray left = buffer.getSamples(0);
+
         delay1->setFeedback(fb);
         delay1->process(left, left);
         delay1->setDelay(delay_samples);

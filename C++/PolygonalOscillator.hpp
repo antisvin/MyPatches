@@ -24,7 +24,7 @@ public:
         : mul(1.0 / sr)
         , nfreq(0.0)
         , phase(0)
-        , nPolyQuant(NONE) {
+        , nPolyQuant(NONE), feedback() {
     }
     PolygonalOscillator(float freq, float sr)
         : PolygonalOscillator(sr) {
@@ -50,6 +50,9 @@ public:
     }
     float getPhase() override {
         return phase * 2.0 * M_PI;
+    }
+    void setFeedback(float angle, float magnitude) {
+        feedback.setPolar(magnitude, angle);
     }
     void setParams(NPolyQuant quant, float nPoly, float teeth) {
         nPolyQuant = quant;
@@ -104,6 +107,9 @@ public:
 protected:
     template<bool with_fm>
     void render(size_t size, float* fm, float* out_x, float* out_y) {
+        float _last_p = lastP;
+        float _last_x = lastX;
+        float _last_y = lastY;
         while (size--) {
             phase += nfreq;
             if (phase >= 1.0f)
@@ -159,8 +165,11 @@ protected:
 
             // Create Polygon
             P = cos(M_PI / nPoly) / cos((2 * modPhase - 1) * M_PI / nPoly + teeth);
-            x = cos(phi) * P;
-            y = sin(phi) * P;
+            x = cos(phi + _last_x * feedback.re) * P;
+            y = sin(phi + _last_y * feedback.im) * P;
+            _last_p = P;
+            _last_x = x;
+            _last_y = y;
 
             xout0 = 0.f;
             xout1 = x;
@@ -232,6 +241,9 @@ protected:
             *out_x++ = xout;
             *out_y++ = yout;
         }
+        lastP = _last_p;
+        lastX = _last_x;
+        lastY = _last_y;
     }
 
 protected:
@@ -247,14 +259,8 @@ protected:
     float yout0, yout1, yout2, yout3, yout;
 
     float h0, h1, h2, h3, d1, d2, d3, d4, d5;
-
-    inline float clamp(float val, float min_val, float max_val) {
-        if (val < min_val)
-            val = min_val;
-        if (val > max_val)
-            val = max_val;
-        return val;
-    }
+    float lastP, lastX, lastY;
+    ComplexFloat feedback;
 };
 
 #endif
