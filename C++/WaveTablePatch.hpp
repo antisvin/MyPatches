@@ -4,7 +4,7 @@
 #include "Patch.h"
 #include "WaveTableOscillator.hpp"
 
-using WT2D = WaveTableOscillator2D<256, 8, 8>;
+using WT2D = WaveTableOscillator2D<256, 8, 8, HERMITE_INTERPOLATION>;
 
 class WaveTablePatch : public Patch {
 public:

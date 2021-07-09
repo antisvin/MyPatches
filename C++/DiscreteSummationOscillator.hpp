@@ -74,6 +74,11 @@ public:
         render<false>(output.getSize(), NULL, output.getSamples(0).getData(),
             output.getSamples(1).getData());
     }
+    ComplexFloat generate() override {
+        ComplexFloat sample;
+        render<false>(1, nullptr, (float*)&sample.re, (float*)&sample.im);
+        return sample;
+    }
     ComplexFloat generate(float fm) override {
         ComplexFloat sample;
         render<true>(1, &fm, (float*)&sample.re, (float*)&sample.im);
@@ -126,17 +131,17 @@ template <>
 template <bool with_fm>
 void DiscreteSummationOscillator<DSF2>::render(
     size_t size, float* fm, float* out_x, float* out_y) {
-    float a3 = (1.f + a * a);
-    float a4 = 2.f * a;
+    float a1 = (1.f + a * a);
+    float a2 = 2.f * a;
     float gain = (1.f - a);
     float s = modPhase;
     while (size--) {
-        *out_x++ = gain * (sin(phase) - a * sin(phase - s)) / (a3 - a4 * cos(s));
-        *out_y++ = gain * (cos(phase) - a * cos(phase - s)) / (a3 - a4 * cos(s));
+        *out_x++ = gain * (sin(phase) - a * sin(phase - s)) / (a1 - a2 * cos(s));
+        *out_y++ = gain * (cos(phase) - a * cos(phase - s)) / (a1 - a2 * cos(s));
         phase += incr;
         s += b * incr;
-//        if (with_fm)
-//            phase += *fm++;
+        if (with_fm)
+            phase += *fm++;
     }
     phase = fmodf(phase, M_PI * 2.f);
     modPhase = fmodf(s, M_PI * 2.f);
@@ -153,8 +158,6 @@ void DiscreteSummationOscillator<DSF3>::render(
     float gain = (a - 1.f) / (2 * a1 - a - 1.f);
     float s = modPhase;
     while (size--) {
-        s += b * incr;
-        
         float b1 = 1.f / (a3 - a4 * cos(s));
         *out_x++ = gain * (sin(phase) - a * sin(phase - s) -
             a1 * (sin(phase + s * a2) - a * sin(phase + n * s))) * b1;
@@ -178,18 +181,15 @@ template <>
 template <bool with_fm>
 void DiscreteSummationOscillator<DSF4>::render(
     size_t size, float* fm, float* out_x, float* out_y) {
-    float a1 = powf(a, n + 1.f);
-    float a2 = n + 1.f;
-    float a3 = (1.f + a * a);
-    float a4 = 2.f * a;
-    float a5 = 1.f - a * a;
+    float a1 = 1.f - a * a;
+    float a2 = 1.f + a * a;
+    float a3 = 2.f * a;
     float gain = (1.f - a) / (1.f + a);
     float s = modPhase;
     while (size--) {
-        s += b * incr;
-        float b1 = cos(s);
-        *out_x++ = gain * a5 * sin(phase) / (a3 - a4 * b1);
-        *out_y++ = gain * a5 * cos(phase) / (a3 - a4 * b1);
+        float b1 = 1.f / (a2 - a3 * cos(s));
+        *out_x++ = gain * a1 * sin(phase) * b1;
+        *out_y++ = gain * a1 * cos(phase) * b1;
         phase += incr;
         s += b * incr;
 

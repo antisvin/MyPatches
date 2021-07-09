@@ -51,7 +51,7 @@
 
 
 #define BASE_FREQ 55.f
-#define MAX_FM_AMOUNT 0.1f
+#define MAX_FM_AMOUNT 1.f
 #define MAX_RATIO 16
 #define CHEB_ORDER 6
 //#define OVERSAMPLE_FACTOR 2

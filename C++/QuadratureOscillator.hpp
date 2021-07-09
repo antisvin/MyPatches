@@ -52,6 +52,10 @@ public:
     virtual void reset() {
     }
     /**
+     * Produce a sample
+     */
+    virtual ComplexFloat generate() = 0;
+    /**
      * Produce a sample with frequency modulation.
      */
     virtual ComplexFloat generate(float fm) = 0;

@@ -16,6 +16,66 @@ public:
     }
 };
 
+class Integrator : public SignalProcessor {
+private:
+    float lambda;
+    float y;
+
+public:
+    Integrator(float lambda = 0.995)
+        : lambda(lambda)
+        , y(0) {
+    }
+    void setSampleRate(float sr) {
+        mul = 1.f / sr;
+    }
+    void setCutoff(float fc) {
+        lambda = fc * mul;
+        if (lambda > 1.f)
+            lambda = 1.f;
+    }
+    /* process a single sample and return the result */
+    float process(float x) {
+        y = y * lambda + x * (1.0f - lambda);
+        return y;
+    }
+
+    void process(float* input, float* output, size_t size) {
+        float x;
+        while (size--) {
+            x = *input++;
+            y = y * lambda + x * (1.0f - lambda);
+            *output++ = y;
+        }
+    }
+
+    /* perform in-place processing */
+    void process(float* buf, int size) {
+        process(buf, buf, size);
+    }
+
+    void process(FloatArray in) {
+        process(in, in, in.getSize());
+    }
+
+    void process(FloatArray in, FloatArray out) {
+        ASSERT(out.getSize() >= in.getSize(),
+            "output array must be at least as long as input");
+        process(in, out, in.getSize());
+    }
+
+    static SmoothingFilter* create(float lambda) {
+        return new SmoothingFilter(lambda);
+    }
+
+    static void destroy(SmoothingFilter* obj) {
+        delete obj;
+    }
+
+protected:
+    float mul = 1.f / 48000;
+};
+
 template <size_t size, size_t dims, InterpolationMethod im = LINEAR_INTERPOLATION>
 class WaveTableOscillator
     : public OscillatorTemplate<WaveTableOscillator<size, dims, im>> {
@@ -36,15 +96,27 @@ public:
         return samples.readAt(size * this->phase);
     }
 
+    void generate(FloatArray input, FloatArray output) override {
+        OscillatorTemplate<WaveTableOscillator<size, dims, im>>::generate(input, output);
+        integrator.process(input, output);
+    }
+
+    void setFrequency(float freq) override {
+        OscillatorTemplate<WaveTableOscillator<size, dims, im>>::setFrequency(freq);
+        integrator.setCutoff(freq);
+    }
+
 protected:
     float* table_start;
+    Integrator integrator;
 };
-
 
 template <size_t size, size_t x_dim, size_t y_dim, InterpolationMethod im = LINEAR_INTERPOLATION>
 class WaveTableOscillator2D : public WaveTableOscillator<size, 2, im> {
 public:
-    WaveTableOscillator2D(float* data) : WaveTableOscillator<size, 2, im>(data) {}
+    WaveTableOscillator2D(float* data)
+        : WaveTableOscillator<size, 2, im>(data) {
+    }
 
     void setTable(size_t x, size_t y) {
         this->samples.setData(this->table_start + (y * y_dim + x) * size);
