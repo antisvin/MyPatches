@@ -3,20 +3,19 @@
 
 #include "QuadratureOscillator.hpp"
 
+#if 0
 class QuadratureSineOscillator : public QuadratureOscillator {
 public:
-    QuadratureSineOscillator(float sr = 48000)
-        : mul(2 * M_PI / sr)
-        , phase(0)
-        , incr(0) {
+    QuadratureSineOscillator()
+        : phase(0), incr(0) {
     }
     QuadratureSineOscillator(float freq, float sr)
-        : mul(2 * M_PI / sr)
-        , phase(0.0f) {
+        : QuadratureSineOscillator() {
+        setSampleRate(sr);
         setFrequency(freq);
     }
     void reset() {
-        phase = 0.0f;
+        phase = 0.f;
     }
     void setSampleRate(float sr) {
         float freq = getFrequency();
@@ -51,6 +50,7 @@ public:
         float* out = output.getSamples(0).getData();
         float phase_t = phase;
         for (size_t i = 0; i < len; ++i) {
+            phase *= incr;
             *out++ = sinf(phase);
             phase_t += incr; // allow phase to overrun
         }
@@ -73,8 +73,16 @@ public:
 
 protected:
     float mul;
-    float incr;
-    float phase;
+    ComplexFloat incr;
+    ComplexFloat phase;
 };
+#endif
+
+class QuadratureSineOscillator : public QuadratureOscillatorTemplate<QuadratureSineOscillator> {
+public:
+    ComplexFloat getSample() {
+        return ComplexFloat(cos(phase), sin(phase));
+    }
+}
 
 #endif

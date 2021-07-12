@@ -72,8 +72,9 @@
 #endif
 
 #define BASE_FREQ 55.f
+#define BASE_LFO_FREQ 0.125f
 //#define QUANTIZER Quantizer12TET
-//#define EXT_FM
+#define EXT_FM
 
 #define MAX_RATIO 5
 #define FM_AMOUNT_MULT (1.f / MAX_FM_AMOUNT)
@@ -82,15 +83,18 @@
 #define P_MORPH    PARAMETER_B
 #define P_DSF_A    PARAMETER_C
 #define P_DSF_B    PARAMETER_D
+#define P_LFO_X    PARAMETER_F
+#define P_LFO_Y    PARAMETER_G
 #define P_FM_AMT   PARAMETER_AA
 #define P_FM_MULT  PARAMETER_AB
 #define P_FM_DIV   PARAMETER_AC
 #define P_FOLD     PARAMETER_AD
 #define P_FB_ANGLE PARAMETER_AE
 #define P_FB_MAG   PARAMETER_AF
-#define P_LFO_X    PARAMETER_F
-#define P_LFO_Y    PARAMETER_G
-#define P_CHAOS    PARAMETER_H
+#define P_LFO_FREQ PARAMETER_BA
+#define P_CHAOS    PARAMETER_BB
+#define P_ATTR_X   PARAMETER_AG
+#define P_ATTR_Y   PARAMETER_AH
 
 using SmoothParam = LockableValue<SmoothValue<float>, float>;
 using StiffParam = LockableValue<StiffValue<float>, float>;
@@ -125,7 +129,7 @@ private:
     QuadratureSineOscillator mod_lfo;
     DsfMorph* dsf;
     StereoWavefolder wavefolder;
-    float attr_x = 0.0, attr_y = 0.0;
+    ComplexFloat attr;
     const float attr_a = -0.827;
     const float attr_b = -1.637;
     const float attr_c = 1.659;
@@ -169,16 +173,15 @@ private:
 public:
     DSF24Patch() {
         mod_lfo.setSampleRate(getSampleRate() / getBlockSize());
-        mod_lfo.setFrequency(0.75);
         mod = SineOscillator::create(getSampleRate());
         dsf = DsfMorph::create(BASE_FREQ, getSampleRate());
         osc_preview = OscPreview::create();
         cv_preview = CVPreview::create();
         registerParameter(P_TUNE, "Tune");
         registerParameter(P_MORPH, "Morph");
-        registerParameter(P_DSF_A, "DSF a");
+        registerParameter(P_DSF_A, "DSF alpha");
         setParameterValue(P_DSF_A, 0.0);
-        registerParameter(P_DSF_B, "DSF b");
+        registerParameter(P_DSF_B, "DSF beta");
         setParameterValue(P_DSF_B, 0.0);
         registerParameter(P_FM_AMT, "FM Amount");
         setParameterValue(P_FM_AMT, 0.0);
@@ -192,10 +195,14 @@ public:
         setParameterValue(P_FB_ANGLE, 0.0);
         registerParameter(P_FB_MAG, "FB Amount");
         setParameterValue(P_FB_MAG, 0.0);
+        registerParameter(P_LFO_FREQ, "LFO Freq");
+        setParameterValue(P_LFO_FREQ, 0.5);
         registerParameter(P_LFO_X, "LfoX>");
         registerParameter(P_LFO_Y, "LFOY>");
         registerParameter(P_CHAOS, "LFO Chaos");
         setParameterValue(P_CHAOS, 0.5);
+        registerParameter(P_ATTR_X, "Attractor>");
+        registerParameter(P_ATTR_Y, "Attractor>");
 
         p_dsf_a.rawValue().lambda = 0.98;
         p_dsf_b.rawValue().lambda = 0.98;
@@ -280,12 +287,19 @@ public:
     }
 
     void processAttractor(float chaos) {
-        float old_x = attr_x, old_y = attr_y;
-        attr_x = sin(attr_a * old_y) - cos(attr_b * old_x);
-        attr_y = sin(attr_c * old_x) - cos(attr_d * old_y);
+        float lfo_f = getParameterValue(P_LFO_FREQ) + 1.f;
+        mod_lfo.setFrequency(BASE_LFO_FREQ * lfo_f * lfo_f);
+
+        float old_x = attr.re, old_y = attr.im;
+        attr.re = sin(attr_a * old_y) - cos(attr_b * old_x);
+        attr.im = sin(attr_c * old_x) - cos(attr_d * old_y);
         lfo_sample = mod_lfo.generate();
-        lfo_sample.re = crossfade(attr_x / 2, lfo_sample.re, chaos);
-        lfo_sample.im = crossfade(attr_y / 2, lfo_sample.im, chaos);
+        lfo_sample.re = crossfade(attr.re / 2, lfo_sample.re, chaos);
+        lfo_sample.im = crossfade(attr.im / 2, lfo_sample.im, chaos);
+        setParameterValue(P_LFO_X, lfo_sample.re * 0.5 + 0.5);
+        setParameterValue(P_LFO_Y, lfo_sample.im * 0.5 + 0.5);
+        setParameterValue(P_ATTR_X, attr.re * 0.5 + 0.5);
+        setParameterValue(P_ATTR_Y, attr.im * 0.5 + 0.5);
     }
 
     void processScreen(MonochromeScreenBuffer& screen) {
@@ -318,8 +332,6 @@ public:
         // CV output
         processAttractor(getParameterValue(P_CHAOS));
         //attr_x * 0.5 + 0.5);
-        setParameterValue(P_LFO_X, lfo_sample.re * 0.5 + 0.5);
-        setParameterValue(P_LFO_Y, lfo_sample.im * 0.5 + 0.5);
         setButton(BUTTON_C, lfo_sample.re * lfo_sample.im >= 0.0);
 
         FloatArray left = buffer.getSamples(LEFT_CHANNEL);
@@ -369,8 +381,8 @@ public:
         fm_divisor = (MAX_RATIO + 1) * p_fm_div.getValue();
         if (fm_divisor == 0) {
             fm_rational = false;
-            fm_ratio = freq * 0.2f * powf(25.0, p_fm_ratio.getValue());
-            mod->setFrequency(fm_ratio);
+            fm_ratio = 0.2f * powf(25.0, p_fm_ratio.getValue());
+            mod->setFrequency(freq * fm_ratio);
         }
         else {
             fm_rational = true;
@@ -412,6 +424,7 @@ public:
         downsampler_left->process(oversample_buf->getSamples(0), left);
         downsampler_right->process(oversample_buf->getSamples(1), right);
 #endif
+
         osc_preview->ingestData(buffer);
         cv_preview->addSample(lfo_sample.re, lfo_sample.im);
     }

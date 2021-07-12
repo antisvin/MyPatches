@@ -2,7 +2,6 @@
 #define __MULTI_OSCILLATOR_HPP__
 
 #include "Oscillator.h"
-#include "QuadratureOscillator.hpp"
 #include "FloatArray.h"
 
 /**
@@ -129,6 +128,8 @@ public:
 };
 
 #if 0
+
+#include "QuadratureOscillator.hpp"
 
 class QuadratureMultiOscillator : public MultiOscillatorTemplate<QuadratureOscillator> {
 public:

@@ -1,7 +1,7 @@
 #ifndef __DISCRETE_SUMMATION_OSCILLATOR_HPP__
 #define __DISCRETE_SUMMATION_OSCILLATOR_HPP__
 
-#include "QuadratureOscillator.hpp"
+#include "ComplexOscillator.h"
 
 enum DSFShape {
     DSF1,
@@ -23,18 +23,25 @@ enum DSFShape {
  * DSF4: infinite series, two-sided spectrum (-b == b)
  **/
 template <DSFShape shape>
-class DiscreteSummationOscillator : public QuadratureOscillator {
+class DiscreteSummationOscillator
+    : public ComplexOscillatorTemplate<DiscreteSummationOscillator<shape>> {
 public:
-    DiscreteSummationOscillator(float sr = 48000)
-        : mul(2 * M_PI / sr)
+    static constexpr float begin_phase = 0.f;
+    static constexpr float end_phase = M_PI * 2;
+
+    DiscreteSummationOscillator()
+        : mul(0)
         , phase(0)
         , modPhase(0)
-        , incr(0) {
+        , incr(0)
+        , last_x(0)
+        , last_y(0)
+        , ComplexOscillatorTemplate<DiscreteSummationOscillator<shape>>() {
     }
     DiscreteSummationOscillator(float freq, float sr)
-        : mul(2 * M_PI / sr)
-        , phase(0.0f) {
+        : DiscreteSummationOscillator() {
         setFrequency(freq);
+        setFeedback(0, 0);
     }
     void reset() {
         phase = 0.0f;
@@ -70,6 +77,12 @@ public:
         this->n = n;
     }
 
+    void setFeedback(float magnitude, float phase) {
+        feedback.setPolar(magnitude, phase);
+    }
+
+    ComplexFloat getSample();
+
     void generate(AudioBuffer& output) override {
         render<false>(output.getSize(), NULL, output.getSamples(0).getData(),
             output.getSamples(1).getData());
@@ -84,7 +97,7 @@ public:
         render<true>(1, &fm, (float*)&sample.re, (float*)&sample.im);
         return sample;
     }
-    void generate(AudioBuffer& output, FloatArray fm) override {
+    void generate(AudioBuffer& output, FloatArray fm) {
         render<true>(output.getSize(), fm.getData(),
             output.getSamples(0).getData(), output.getSamples(1).getData());
     }
@@ -95,6 +108,8 @@ protected:
     float phase;
     float modPhase;
     float a, b, n;
+    ComplexFloat feedback;
+    float last_x, last_y;
 
     template <bool with_fm>
     void render(size_t size, float* fm, float* out_x, float* out_y);
@@ -110,21 +125,31 @@ void DiscreteSummationOscillator<DSF1>::render(
     float a4 = 2.f * a;
     float gain = (a - 1.f) / (a1 - 1.f);
     float s = modPhase;
-    
+    float _last_x = last_x;
+    float _last_y = last_y;
     while (size--) {
-        *out_x++ = gain * (sin(phase) - a * sin(phase - s) -
-                       a1 * (sin(phase + s * a2) - a * sin(phase + n * s))) /
+        float phase_re = phase + _last_x * feedback.re;
+        float phase_im = phase + _last_y * feedback.im;
+        if (with_fm) {
+            float fm_mod = M_PI * 2.f * *fm++;
+            phase_re += fm_mod;
+            phase_im += fm_mod;
+        }
+        *out_x++ = gain *
+            (cos(phase_re) - a * cos(phase_re - s) -
+                a1 * (cos(phase_re + s * a2) - a * cos(phase_re + n * s))) /
             (a3 - a4 * cos(s));
-        *out_y++ = gain * (cos(phase) - a * cos(phase - s) -
-                       a1 * (cos(phase + s * a2) - a * cos(phase + n * s))) /
+        *out_y++ = gain *
+            (sin(phase_im) - a * sin(phase_im - s) -
+                a1 * (sin(phase_im + s * a2) - a * sin(phase_im + n * s))) /
             (a3 - a4 * cos(s));
         phase += incr;
         s += b * incr;
-        if (with_fm)
-            phase += *fm++;
     }
     phase = fmodf(phase, M_PI * 2.f);
     modPhase = fmodf(s, M_PI * 2.f);
+    last_x = _last_x;
+    last_y = _last_y;
 }
 
 template <>
@@ -135,16 +160,29 @@ void DiscreteSummationOscillator<DSF2>::render(
     float a2 = 2.f * a;
     float gain = (1.f - a);
     float s = modPhase;
+    float _last_x = last_x;
+    float _last_y = last_y;
     while (size--) {
-        *out_x++ = gain * (sin(phase) - a * sin(phase - s)) / (a1 - a2 * cos(s));
-        *out_y++ = gain * (cos(phase) - a * cos(phase - s)) / (a1 - a2 * cos(s));
+        float phase_re = phase + _last_x * feedback.re;
+        float phase_im = phase + _last_y * feedback.im;
+        if (with_fm) {
+            float fm_mod = M_PI * 2.f * *fm++;
+            phase_re += fm_mod;
+            phase_im += fm_mod;
+        }
+        _last_x =
+            gain * (cos(phase_re) - a * cos(phase_re - s)) / (a1 - a2 * cos(s));
+        *out_x++ = _last_x;
+        _last_y =
+            gain * (sin(phase_im) - a * sin(phase_im - s)) / (a1 - a2 * cos(s));
+        *out_y++ = _last_y;
         phase += incr;
         s += b * incr;
-        if (with_fm)
-            phase += *fm++;
     }
     phase = fmodf(phase, M_PI * 2.f);
     modPhase = fmodf(s, M_PI * 2.f);
+    last_x = _last_x;
+    last_y = _last_y;
 }
 
 template <>
@@ -157,24 +195,34 @@ void DiscreteSummationOscillator<DSF3>::render(
     float a4 = 2.f * a;
     float gain = (a - 1.f) / (2 * a1 - a - 1.f);
     float s = modPhase;
+    float _last_x = last_x;
+    float _last_y = last_y;
     while (size--) {
+        float phase_re = phase + _last_x * feedback.re;
+        float phase_im = phase + _last_y * feedback.im;
+        if (with_fm) {
+            float fm_mod = M_PI * 2.f * *fm++;
+            phase_re += fm_mod;
+            phase_im += fm_mod;
+        }
         float b1 = 1.f / (a3 - a4 * cos(s));
-        *out_x++ = gain * (sin(phase) - a * sin(phase - s) -
-            a1 * (sin(phase + s * a2) - a * sin(phase + n * s))) * b1;
-        *out_y++ = gain * (cos(phase) - a * cos(phase - s) -
-            a1 * (cos(phase + s * a2) - a * cos(phase + n * s))) * b1;
-
+        _last_x = gain *
+            (cos(phase_re) - a * cos(phase_re - s) -
+                a1 * (cos(phase_re + s * a2) - a * cos(phase_re + n * s))) *
+            b1;
+        *out_x++ = _last_x;
+        _last_y = gain *
+            (sin(phase_im) - a * sin(phase_im - s) -
+                a1 * (sin(phase_im + s * a2) - a * sin(phase_im + n * s))) *
+            b1;
+        *out_y++ = _last_y;
         phase += incr;
         s += b * incr;
-        if (with_fm) {
-            float fm_sample = *fm++;
-            phase += fm_sample;
-            //phase = fmodf(phase + 2.f * M_PI, M_PI * 2.f);
-            //s += (*fm++) * b;
-        }
     }
     phase = fmodf(phase, M_PI * 2.f);
     modPhase = fmodf(s, M_PI * 2.f);
+    last_x = _last_x;
+    last_y = _last_y;
 }
 
 template <>
@@ -186,20 +234,28 @@ void DiscreteSummationOscillator<DSF4>::render(
     float a3 = 2.f * a;
     float gain = (1.f - a) / (1.f + a);
     float s = modPhase;
+    float _last_x = last_x;
+    float _last_y = last_y;
     while (size--) {
+        float phase_re = phase + _last_x * feedback.re;
+        float phase_im = phase + _last_y * feedback.im;
+        if (with_fm) {
+            float fm_mod = M_PI * 2.f * *fm++;
+            phase_re += fm_mod;
+            phase_im += fm_mod;
+        }
         float b1 = 1.f / (a2 - a3 * cos(s));
-        *out_x++ = gain * a1 * sin(phase) * b1;
-        *out_y++ = gain * a1 * cos(phase) * b1;
+        _last_x = gain * a1 * cos(phase_re) * b1;
+        *out_x++ = _last_x;
+        _last_y = gain * a1 * sin(phase_im) * b1;
+        *out_y++ = last_y;
         phase += incr;
         s += b * incr;
-
-        if (with_fm) {
-            //modPhase += *fm * b;
-            phase += *fm++;
-        }
     }
     phase = fmodf(phase, M_PI * 2.f);
     modPhase = fmodf(s, M_PI * 2.f);
+    last_x = _last_x;
+    last_y = _last_y;
 }
 
 #endif
