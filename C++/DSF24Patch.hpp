@@ -13,6 +13,7 @@
 #include "Wavefolder.hpp"
 #include "MonochromeScreenPatch.h"
 #include "MonochromePreview.hpp"
+#include "Contour.hpp"
 
 /**
  * Morphing DSF oscillator
@@ -74,6 +75,7 @@
 #define BASE_FREQ 55.f
 #define BASE_LFO_FREQ 0.125f
 //#define QUANTIZER Quantizer12TET
+//#define QUANTIZER Quantizer<19>
 #define EXT_FM
 
 #define MAX_RATIO 5
@@ -85,16 +87,19 @@
 #define P_DSF_B    PARAMETER_D
 #define P_LFO_X    PARAMETER_F
 #define P_LFO_Y    PARAMETER_G
+#define P_CNT_OUT  PARAMETER_H
 #define P_FM_AMT   PARAMETER_AA
 #define P_FM_MULT  PARAMETER_AB
 #define P_FM_DIV   PARAMETER_AC
 #define P_FOLD     PARAMETER_AD
 #define P_FB_ANGLE PARAMETER_AE
 #define P_FB_MAG   PARAMETER_AF
-#define P_LFO_FREQ PARAMETER_BA
-#define P_CHAOS    PARAMETER_BB
 #define P_ATTR_X   PARAMETER_AG
 #define P_ATTR_Y   PARAMETER_AH
+#define P_LFO_FREQ PARAMETER_BA
+#define P_CHAOS    PARAMETER_BB
+#define P_CNT_TRIG PARAMETER_BC
+#define P_CNT_SHP  PARAMETER_BD
 
 using SmoothParam = LockableValue<SmoothValue<float>, float>;
 using StiffParam = LockableValue<StiffValue<float>, float>;
@@ -134,6 +139,7 @@ private:
     const float attr_b = -1.637;
     const float attr_c = 1.659;
     const float attr_d = -0.943;
+    Contour contour;
 #ifdef QUANTIZER
     QUANTIZER quantizer;
 #endif
@@ -177,6 +183,8 @@ public:
         dsf = DsfMorph::create(BASE_FREQ, getSampleRate());
         osc_preview = OscPreview::create();
         cv_preview = CVPreview::create();
+        contour.setSampleRate(getSampleRate());
+        contour.setRate(getBlockSize());
         registerParameter(P_TUNE, "Tune");
         registerParameter(P_MORPH, "Morph");
         registerParameter(P_DSF_A, "DSF alpha");
@@ -200,9 +208,15 @@ public:
         registerParameter(P_LFO_X, "LfoX>");
         registerParameter(P_LFO_Y, "LFOY>");
         registerParameter(P_CHAOS, "LFO Chaos");
-        setParameterValue(P_CHAOS, 0.5);
+        setParameterValue(P_CHAOS, 0.22);
         registerParameter(P_ATTR_X, "Attractor>");
         registerParameter(P_ATTR_Y, "Attractor>");
+        registerParameter(P_CNT_SHP, "Contour shp");
+        setParameterValue(P_CNT_SHP, 0.5);
+        registerParameter(P_CNT_TRIG, "Contour trig");
+        setParameterValue(P_CNT_TRIG, 0.0);
+        registerParameter(P_CNT_OUT, "Contour>");
+        setParameterValue(P_CNT_OUT, 0.0);
 
         p_dsf_a.rawValue().lambda = 0.98;
         p_dsf_b.rawValue().lambda = 0.98;
@@ -300,6 +314,10 @@ public:
         setParameterValue(P_LFO_Y, lfo_sample.im * 0.5 + 0.5);
         setParameterValue(P_ATTR_X, attr.re * 0.5 + 0.5);
         setParameterValue(P_ATTR_Y, attr.im * 0.5 + 0.5);
+
+        contour.setShape(getParameterValue(P_CNT_SHP));
+        contour.gate(getParameterValue(P_CNT_TRIG) > 0.05, 0);
+        setParameterValue(P_CNT_OUT, contour.generate());
     }
 
     void processScreen(MonochromeScreenBuffer& screen) {
@@ -415,7 +433,7 @@ public:
         dsf->generate(audio_buf, audio_buf.getSamples(1));
 
         p_fold.update(getParameterValue(P_FOLD));
-        float gain = p_fold.getValue() * 4.f;
+        float gain = p_fold.getValue() * 3.f;
         audio_buf.getSamples(0).multiply(gain);
         audio_buf.getSamples(1).multiply(gain);
         wavefolder.process(audio_buf, audio_buf);
