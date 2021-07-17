@@ -7,20 +7,19 @@
 /**
  * A class that contains multiple child oscillators and morphs between 2 of them
  */
-template <typename OscillatorClass>
+template <size_t limit, typename OscillatorClass>
 class MultiOscillatorTemplate : public OscillatorClass {
 public:
-    MultiOscillatorTemplate(size_t limit, float sr = 48000)
+    MultiOscillatorTemplate(float sr = 48000)
         : OscillatorClass()
-        , limit(limit)
         , mul(1.0 / sr)
         , nfreq(0.0)
         , phase(0) {
         oscillators = new OscillatorClass*[limit];
         setSampleRate(sr);
     }
-    MultiOscillatorTemplate(size_t limit, float freq, float sr)
-        : MultiOscillatorTemplate(limit, sr) {
+    MultiOscillatorTemplate(float freq, float sr)
+        : MultiOscillatorTemplate(sr) {
         setFrequency(freq);
     }
     ~MultiOscillatorTemplate() {
@@ -77,36 +76,6 @@ public:
     size_t getSize() const {
         return num_oscillators;
     }
-    static MultiOscillatorTemplate* create(size_t limit, float sr) {
-        return new MultiOscillatorTemplate(limit, sr);
-    }
-    static MultiOscillatorTemplate* create(size_t limit, float freq, float sr) {
-        return new MultiOscillatorTemplate(limit, freq, sr);
-    }
-    static void destroy(MultiOscillatorTemplate* osc) {
-        // We can't destroy child oscillators here, because this is a static method that
-        // has no idea about their vptrs. Must be done separately by caller class.
-        delete osc;
-    }
-
-protected:
-    size_t limit = 0;
-    size_t num_oscillators = 0;
-    OscillatorClass** oscillators;
-    size_t morph_idx = 0;
-    float morph_frac;
-    float mul;
-    float nfreq;
-    float phase;
-};
-
-class MultiOscillator : public MultiOscillatorTemplate<Oscillator> {
-public:
-    MultiOscillator(size_t limit, float sr = 48000)
-        : MultiOscillatorTemplate<Oscillator>(limit, sr) {};
-    MultiOscillator(size_t limit, float freq, float sr)
-        : MultiOscillatorTemplate<Oscillator>(limit, freq, sr) {
-    }
     float generate() override {
         float sample_a = oscillators[morph_idx]->generate();
         float sample_b = oscillators[morph_idx + 1]->generate();
@@ -125,6 +94,35 @@ public:
         phase = oscillators[morph_idx]->getPhase();
         return sample_a + (sample_b - sample_a) * morph_frac;
     }
+    static MultiOscillatorTemplate* create(float sr) {
+        return new MultiOscillatorTemplate(sr);
+    }
+    static MultiOscillatorTemplate* create(float freq, float sr) {
+        return new MultiOscillatorTemplate(freq, sr);
+    }
+    static void destroy(MultiOscillatorTemplate* osc) {
+        // We can't destroy child oscillators here, because this is a static method that
+        // has no idea about their vptrs. Must be done separately by caller class.
+        delete osc;
+    }
+
+protected:
+    size_t num_oscillators = 0;
+    OscillatorClass** oscillators;
+    size_t morph_idx = 0;
+    float morph_frac;
+    float mul;
+    float nfreq;
+    float phase;
+};
+
+template <size_t limit>
+class MultiOscillator : public MultiOscillatorTemplate<limit, Oscillator> {
+public:
+    // using MultiOscillatorTemplate<limit, Oscillator>::oscillators;
+    // using MultiOscillatorTemplate<limit, Oscillator>::morph_idx;
+    //    MultiOscillator()
+    //        : MultiOscillatorTemplate<limit, Oscillator> {}
 };
 
 #if 0

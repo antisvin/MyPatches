@@ -2,7 +2,7 @@
 #define __QUADRATURE_PHASER_HPP__
 
 #include "SignalProcessor.h"
-#include "QuadratureSineOscillator.hpp"
+#include "QuadratureSineOscillator.h"
 
 class QuadraturePhaser : public MultiSignalProcessor {
 private:
@@ -19,7 +19,8 @@ private:
     */
 
 public:
-    QuadraturePhaser(float sr = 48000) : oscillator(sr), sr(sr) {
+    QuadraturePhaser(float sr = 48000) : sr(sr) {
+        oscillator.setSampleRate(sr);
     }
     void setAmount(float amount) {
         oscillator.setFrequency(amount * sr);

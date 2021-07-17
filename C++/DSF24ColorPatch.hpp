@@ -11,10 +11,10 @@
 #include "LockableValue.hpp"
 #include "MultiProcessor.hpp"
 #include "Wavefolder.hpp"
-#include "MonochromeScreenPatch.h"
-#include "MonochromePreview.hpp"
 #include "Contour.hpp"
-#include "Sequence.h"
+#include "ColourScreenPatch.h"
+#include "ColorUtils.hpp"
+#include "CircularBuffer.h"
 
 /**
  * Morphing DSF oscillator
@@ -82,6 +82,8 @@
 #define MAX_RATIO 5
 #define FM_AMOUNT_MULT (1.f / MAX_FM_AMOUNT)
 #define MAX_STEPS 16
+#define NUM_PIXELS 8192 // 6 bytes per pixel
+#define SCREEN_SMOOTH 0.9f
 
 #define P_TUNE PARAMETER_A
 #define P_MORPH PARAMETER_B
@@ -96,8 +98,6 @@
 #define P_FOLD PARAMETER_AD
 #define P_FB_ANGLE PARAMETER_AE
 #define P_FB_MAG PARAMETER_AF
-#define P_EU_STEPS PARAMETER_AG
-#define P_EU_FILLS PARAMETER_AH
 #define P_LFO_FREQ PARAMETER_BA
 #define P_CHAOS PARAMETER_BB
 #define P_CNT_TRIG PARAMETER_BC
@@ -108,9 +108,8 @@ using StiffParam = LockableValue<StiffValue<float>, float>;
 using MorphBase =
     StereoMorphingOscillator<DiscreteSummationOscillator<DSF2>, DiscreteSummationOscillator<DSF4>>;
 using StereoWavefolder = MultiProcessor<Wavefolder<HardClipper>, 2>;
-using OscPreview = MonochromeQuadraturePreview<256, 4, uint8_t>;
-using CVPreview = MonochromeQuadraturePreview<128, 1, uint8_t>;
-using Point = OscPreview::Point;
+using ColourBuffer = CircularBuffer<Pixel>;
+
 
 class DsfMorph : public MorphBase {
 public:
@@ -126,21 +125,21 @@ public:
     }
 };
 
-class DSF24Patch : public MonochromeScreenPatch {
+class DSF24ColorPatch : public ColourScreenPatch {
 private:
-    OscPreview* osc_preview;
-    CVPreview* cv_preview;
     SineOscillator* mod;
     QuadratureSineOscillator mod_lfo;
     DsfMorph* dsf;
     StereoWavefolder wavefolder;
     ComplexFloat attr;
-    Sequence<uint32_t> seq;
     const float attr_a = -0.827;
     const float attr_b = -1.637;
     const float attr_c = 1.659;
     const float attr_d = -0.943;
     Contour contour;
+    ColourBuffer* pixels;
+    uint16_t screen_radius = 0;
+    uint16_t screen_center_x = 0, screen_center_y = 0;
 #ifdef QUANTIZER
     QUANTIZER quantizer;
 #endif
@@ -178,14 +177,11 @@ private:
     }
 
 public:
-    DSF24Patch() {
+    DSF24ColorPatch() {
         mod_lfo.setSampleRate(getSampleRate() / getBlockSize());
         mod = SineOscillator::create(getSampleRate());
         dsf = DsfMorph::create(BASE_FREQ, getSampleRate());
-        osc_preview = OscPreview::create();
-        cv_preview = CVPreview::create();
-        contour.setSampleRate(getSampleRate());
-        contour.setRate(getBlockSize());
+
         registerParameter(P_TUNE, "Tune");
         registerParameter(P_MORPH, "Morph");
         registerParameter(P_DSF_A, "DSF alpha");
@@ -210,8 +206,6 @@ public:
         registerParameter(P_LFO_Y, "LFOY>");
         registerParameter(P_CHAOS, "LFO Chaos");
         setParameterValue(P_CHAOS, 0.22);
-        registerParameter(P_EU_STEPS, "Eucl. Steps");
-        registerParameter(P_EU_FILLS, "Eucl. Fills");
         //registerParameter(P_ATTR_X, "Attractor>");
         //registerParameter(P_ATTR_Y, "Attractor>");
         registerParameter(P_CNT_SHP, "Contour shp");
@@ -232,6 +226,8 @@ public:
         p_fb_angle.rawValue().lambda = 0.98;
         p_fb_mag.rawValue().lambda = 0.98;
 
+        pixels = ColourBuffer::create(NUM_PIXELS);
+
 #ifdef OVERSAMPLE_FACTOR
         upsampler_pitch = UpSampler::create(1, OVERSAMPLE_FACTOR);
         upsampler_fm = UpSampler::create(1, OVERSAMPLE_FACTOR);
@@ -246,9 +242,8 @@ public:
 #endif
     }
 
-    ~DSF24Patch() {
-        OscPreview::destroy(osc_preview);
-        CVPreview::destroy(cv_preview);
+    ~DSF24ColorPatch() {
+        ColourBuffer::destroy(pixels);
         SineOscillator::destroy(mod);
         DsfMorph::destroy(dsf);
 #ifdef OVERSAMPLE_FACTOR
@@ -320,47 +315,28 @@ public:
 //        setParameterValue(P_ATTR_X, attr.re * 0.5 + 0.5);
 //        setParameterValue(P_ATTR_Y, attr.im * 0.5 + 0.5);
 
-        int steps = getParameterValue(P_EU_STEPS) * MAX_STEPS;
-        int fills = getParameterValue(P_EU_FILLS) * steps;
-        seq.calculate(steps, fills);
-
-        if (last_lfo_re > lfo_sample.re) {
-            if (seq.next())
-                contour.trigger(true, 0);
-        }
-
         contour.setShape(getParameterValue(P_CNT_SHP));
         contour.gate(getParameterValue(P_CNT_TRIG) > 0.05, 0);
         setParameterValue(P_CNT_OUT, contour.generate());
     }
 
-    void processScreen(MonochromeScreenBuffer& screen) {
-        uint16_t height = screen.getHeight() - 20;
-        osc_preview->setDimensions(height, height);
-        for (size_t i = 0; i < osc_preview->getSize(); i++) {
-            Point p = osc_preview->buffer->read();
-            screen.setPixel(p.x, p.y, WHITE);
-        }
-        screen.print(height, 10, "FM");
-        screen.setCursor(height, 20);
-        if (fm_rational) {
-            screen.print(fm_multiplier);
-            screen.print(":");
-            screen.print(fm_divisor);
-        }
-        else {
-            screen.print(fm_ratio);
-        }
+    void processScreen(ColourScreenBuffer& screen) {
+        // This zooms in visualization when patch starts
+        screen_radius = (float)screen_radius * SCREEN_SMOOTH +
+            float(std::min(screen.getWidth(), screen.getHeight())) * 0.5f *
+                (1.f - SCREEN_SMOOTH);
+        screen_center_x = screen.getWidth() / 2;
+        screen_center_y = screen.getHeight() / 2;
 
-        screen.setCursor(height, 30);
-        screen.print(seq.getPosition());
-        screen.print("/");
-        screen.print(seq.getLength());
-        uint16_t offset = screen.getWidth() - screen.getHeight() + 20;
-        cv_preview->setDimensions(height, height);
-        for (size_t i = 0; i < cv_preview->getSize(); i++) {
-            Point p = cv_preview->buffer->read();
-            screen.setPixel(offset + p.x, p.y, WHITE);
+        //uint16_t hue_16_bit = RGB888toRGB565(HSBtoRGB(hue_step * hue, 1.f, 1.f));
+        uint16_t hue_16_bit = YELLOW;
+
+        for (size_t i = 0; i < NUM_PIXELS; i++) {
+            Pixel px = pixels->readAt(i);
+//            uint16_t hue_16_bit = RGB888toRGB565(HSBtoRGB(i * 360.f * hue_step, 1.f, 1.f));
+            
+            screen.setPixel(px.x, px.y, hue_16_bit);//
+            //hue_16bit);
         }
     }
 
@@ -462,8 +438,14 @@ public:
         downsampler_right->process(oversample_buf->getSamples(1), right);
 #endif
 
-        osc_preview->ingestData(buffer);
-        cv_preview->addSample(lfo_sample.re, lfo_sample.im);
+        for (size_t i = 0; i < buffer.getSize(); i += 4) {
+            Pixel new_px(
+                screen_center_x + int16_t(left[i] * screen_radius),
+                screen_center_y + int16_t(right[i] * screen_radius),
+                HSBto565(1.f, 1.f, 1.f));
+            pixels->write(new_px);
+            //prev_px = new_px;
+        }
     }
 };
 

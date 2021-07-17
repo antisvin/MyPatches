@@ -8,10 +8,12 @@
  */
 
 #include <cmath>
-#include "QuadratureOscillator.hpp"
+#include "ComplexOscillator.h"
 
-class PolygonalOscillator : public QuadratureOscillator {
+class PolygonalOscillator : public ComplexOscillator{
 public:
+//    static constexpr float begin_phase = 0.f;
+//    static constexpr float end_phase = 1.0;
     enum NPolyQuant {
         NONE,
         Q025,
@@ -20,25 +22,19 @@ public:
         Q100,
         NUM_NPOLYQUANT,
     };
-    PolygonalOscillator(float sr = 48000)
-        : mul(1.0 / sr)
+    PolygonalOscillator()
+        : mul(0.0)
         , nfreq(0.0)
         , phase(0)
         , nPolyQuant(NONE), feedback() {
     }
-    PolygonalOscillator(float freq, float sr)
-        : PolygonalOscillator(sr) {
-        setFrequency(freq);
-    }
-    void reset() override {
-        phase = 0.0f;
-    }
     void setSampleRate(float sr) override {
-        mul = 1.0f / sr;
+        mul = M_PI * 2 / sr;
     }
-    float getSampleRate() override {
-        return 1.0f / mul;
+    void reset() {
+        phase = 0.f;
     }
+
     void setFrequency(float freq) override {
         nfreq = mul * freq;
     }
@@ -92,15 +88,21 @@ public:
         this->teeth = teeth;
         gain = 0.5f - 0.25f * teeth;
     }
-    void generate(AudioBuffer& output) override {
-        render<false>(output.getSize(), NULL, output.getSamples(0).getData(), output.getSamples(1).getData());
+    ComplexFloat generate() {
+        ComplexFloat sample;
+        render<false>(1, nullptr, (float*)&sample.re, (float*)&sample.im);
+        return sample;
     }
-    ComplexFloat generate(float fm) override {
+    ComplexFloat generate(float fm) {
         ComplexFloat sample;
         render<true>(1, &fm, (float*)&sample.re, (float*)&sample.im);
         return sample;
     }
-    void generate(AudioBuffer& output, FloatArray fm) override {
+    void generate(AudioBuffer& output) {
+        render<false>(
+            output.getSize(), nullptr, output.getSamples(0).getData(), output.getSamples(1).getData());
+    }
+    void generate(AudioBuffer& output, FloatArray fm) {
         render<true>(
             output.getSize(), fm.getData(), output.getSamples(0).getData(), output.getSamples(1).getData());
     }
@@ -116,6 +118,9 @@ protected:
                 phase -= 1.f;
             else if (phase < 0.0f)
                 phase += 1.f;
+
+            if (with_fm) // Actually PM
+                phase += nfreq * *fm++;
 
             modPhase += nfreq * nPoly;
             // Increment phase and check if there is a discontinuity, if
@@ -233,9 +238,6 @@ protected:
             yout3 = yout2;
             yout2 = yout1;
             yout1 = yout0;
-
-            if (with_fm)
-                phase += *fm++;
 
             // Set output values
             *out_x++ = xout;

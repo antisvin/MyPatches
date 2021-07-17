@@ -129,7 +129,6 @@ private:
     SineOscillator mod_lfo;
     DcBlockingFilter dc_fm;
     ColourBuffer* pixels;
-
     uint16_t screen_radius = 0;
     uint16_t screen_center_x = 0, screen_center_y = 0;
     float attr_x = 0.0, attr_y = 0.0;
@@ -137,7 +136,7 @@ private:
     const float attr_b = -1.637;
     const float attr_c = 1.659;
     const float attr_d = -0.943;
-    Pixel prev_px;
+    //Pixel prev_px;
     ComplexFloat cmp_offset;
     ComplexFloat sample;
     uint32_t hue = 0;
@@ -409,7 +408,7 @@ public:
             pixels->write(prev_px.interpolate(new_px, 0xc0));
             */
             pixels->write(new_px);
-            prev_px = new_px;
+            //prev_px = new_px;
         }
 //        hue %= hue_steps;
     }

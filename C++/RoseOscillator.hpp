@@ -1,14 +1,14 @@
 #ifndef __ROSE_OSCILLATOR_HPP__
 #define __ROSE_OSCILLATOR_HPP__
 
-#include "QuadratureOscillator.hpp"
+#include "ComplexOscillator.h"
 
 /**
  * A complex (quadrature) oscillator based on Rose (rhodonea curve).
  * See https://en.wikipedia.org/wiki/Rose_(mathematics) for details
  */
 
-class RoseOscillator : public QuadratureOscillator {
+class RoseOscillator : public ComplexOscillator {
 public:
     RoseOscillator(float sr = 48000)
         : mul(2 * M_PI / sr) {
@@ -63,7 +63,7 @@ public:
         render<true>(1, &fm, (float*)&sample.re, (float*)&sample.im);
         return sample;
     }
-    void generate(AudioBuffer& output, FloatArray fm) override {
+    void generate(AudioBuffer& output, FloatArray fm) {
         render<true>(output.getSize(), fm.getData(),
             output.getSamples(0).getData(), output.getSamples(1).getData());
     }
