@@ -82,7 +82,7 @@
 #define MAX_RATIO 5
 #define FM_AMOUNT_MULT (1.f / MAX_FM_AMOUNT)
 #define MAX_STEPS 16
-#define NUM_PIXELS 8192 // 6 bytes per pixel
+#define NUM_PIXELS 10240 // 6 bytes per pixel
 #define SCREEN_SMOOTH 0.9f
 
 #define P_TUNE PARAMETER_A
@@ -428,7 +428,7 @@ public:
         dsf->generate(audio_buf, audio_buf.getSamples(1));
 
         p_fold.update(getParameterValue(P_FOLD));
-        float gain = p_fold.getValue() * 3.f;
+        float gain = 1.f + p_fold.getValue() * 3.f;
         audio_buf.getSamples(0).multiply(gain);
         audio_buf.getSamples(1).multiply(gain);
         wavefolder.process(audio_buf, audio_buf);
@@ -438,7 +438,7 @@ public:
         downsampler_right->process(oversample_buf->getSamples(1), right);
 #endif
 
-        for (size_t i = 0; i < buffer.getSize(); i += 4) {
+        for (size_t i = 0; i < buffer.getSize(); i += 2) {
             Pixel new_px(
                 screen_center_x + int16_t(left[i] * screen_radius),
                 screen_center_y + int16_t(right[i] * screen_radius),

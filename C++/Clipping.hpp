@@ -165,18 +165,6 @@ public:
     float clipN0(float x) override {
         return sinf(-M_PI -
             0.25f * M_PI * (signum(x + 1) * (x + 1) - signum(x - 1) * (x - 1)));
-
-        /*
-        if (std::abs(x) < 1) {
-            //return Interpolate(sineWT, 0.5f - 0.25f * x, 1024.0f);
-            // return std::sin(0.5 * M_PI * x);
-        }
-        else {
-            return signum(x);
-        }
-        */
-
-        // else -> sin(3 * PI * x / 4)
     }
 
     float clipN1(float x) override {
@@ -184,16 +172,6 @@ public:
             4 / M_PI *
             cosf(-M_PI -
                 0.25f * M_PI * (signum(x + 1) * (x + 1) - signum(x - 1) * (x - 1)));
-        /*
-        if (std::abs(x) < 1) {
-            return 2.0 / M_PI -
-                (2.0f / M_PI) * Interpolate(cosineWT, 0.5f - x * 0.25f, 1024.0f);
-            // return 2.0 / M_PI - (2.0f / M_PI) * std::cos(0.5 * M_PI * x);
-        }
-        else {
-            return signum(x) * x;
-        }
-        */
     }
 
     float clipN2(float x) override {
