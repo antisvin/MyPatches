@@ -6,18 +6,6 @@
 
 #include "ComplexTransform.h"
 
-/**
- * Static allocation with matrix in 3x3 float buffer - 9%
- * Same, with dynamic allocation - 13%
- * FloatMatrix - also 13%
- *
- * Composite - 14%
- * Interpolated - 12%
- *
- * Linear:
- * interpolated 10%
- */
-
 class TransformMatrixPatch : public Patch {
 public:
     using Transform = InterpolatedCompositeTransform<3>;
