@@ -6,8 +6,8 @@
 
 // Source: https://github.com/fabianesqueda/Agave/blob/master/src/dsp/Waveshaping.hpp
 
-template <typename Clipper = HardClipper>
-class Wavefolder : public SignalProcessor {
+template <typename Function>
+class AntialiasedWaveFolder : public SignalProcessor {
 private:
     // Antialiasing state variables
     float xn1 = 0.0;
@@ -21,42 +21,29 @@ private:
     const float thresh = 10.0e-2;
 
     const float oneSixth = 1.0 / 6.0;
-
-    Clipper clipper;
-
 public:
-    Wavefolder()
-        : SignalProcessor() {
-    }
-    ~Wavefolder() {
-    }
-
+    AntialiasedWaveFolder() = default;
+    ~AntialiasedWaveFolder() = default;
     virtual void process(FloatArray input, FloatArray output) {
         for (size_t i = 0; i < output.getSize(); ++i)
             output[i] = process(input[i]);
     }
-
     float process(float input) {
         return antialiasedFoldN2(input);
     }
-
     float foldFunctionN0(float x) {
         // Folding function
-        return (2.0f * clipper.clipN0(x) - x);
+        return (2.0f * Function::getSample(x) - x);
     }
-
     float foldFunctionN1(float x) {
         // First antiderivative of the folding function
-        return (2.0f * clipper.clipN1(x) - 0.5f * x * x);
+        return (2.0f * Function::getAntiderivative1(x) - 0.5f * x * x);
     }
-
     float foldFunctionN2(float x) {
         // Second antiderivative of the folding function
-        return (2.0f * clipper.clipN2(x) - oneSixth * (x * x * x));
+        return (2.0f * Function::getAntiderivative2(x) - oneSixth * (x * x * x));
     }
-
     float antialiasedFoldN1(float x) {
-
         // Folding with 1st-order antialiasing (not recommended)
         Fn = foldFunctionN1(x);
         float tmp = 0.0;
@@ -73,7 +60,6 @@ public:
 
         return tmp;
     }
-
     float antialiasedFoldN2(float x) {
 
         // Folding with 2nd-order antialiasing

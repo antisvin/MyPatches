@@ -19,7 +19,7 @@ public:
 };
 
 /**
- * Output is in [-1..1] range
+ * Unclipped signal is not distorted
  **/
 class HardClip : public Nonlinearity {
 public:
@@ -38,60 +38,9 @@ public:
     }
 };
 
-class AsymmetricHardClip : public Nonlinearity {
-public:
-    static float getSample(float x) {
-        if (std::abs(x) > 1)
-            return signum(x);
-        else
-            return (std::abs(x) + std::abs(x + 1) - std::abs(x - 1) - 1.f) / 2;
-    }
-    static float getAntiderivative1(float x) {
-        float a = x + 1.0f;
-        float b = x - 1.0f;
-        float xabs = std::abs(x);
-        if (xabs > 1.f)
-            return xabs - (2.f + signum(x)) / 4;
-        else
-            return (x * xabs + a * std::abs(a) - b * std::abs(b) - 2.f * a) / 4;
-    }
-    static float getAntiderivative2(float x) {
-        float a = x + 1.0f;
-        float b = x - 1.0f;
-        float xabs = std::abs(x);
-        if (xabs > 1.f)
-            return (x * xabs - x) / 2 - xabs / 4 + signum(x) / 6 + 1.f / 12;
-        else
-            return (x * x * xabs + a * a * std::abs(a) - b * b * std::abs(b) -
-                       3.f * x * (x + 2.f)) /
-                12;
-    }
-};
 
 /**
- * Output is truncated to [-2/3..2/3]
- **/
-class CubicSoftClip : public Nonlinearity {
-public:
-    static float getSample(float x) {
-        if (std::abs(x) >= 1.f)
-            return signum(x) * 2 / 3;
-        else
-            return x - x * x * x / 3;
-    }
-    static float getAntiderivative1(float x) {
-        float a = std::abs(x);
-        if (a >= 1.f)
-            return a * 2 / 3 - 0.25f;
-        else {
-            float a = x * x;
-            return a * (6.f - a) / 12;
-        }
-    }
-};
-
-/**
- * Output is truncated to [-1..1]
+ * This is based on the classic cubic softclip, but without scaling it to [-2/3..2/3]
  **/
 class CubicSaturator : public Nonlinearity {
 public:
@@ -110,8 +59,127 @@ public:
             return 3.f * a / 4 - a * a / 8;
         }
     }
+    static float getAntiderivative2(float x) {
+        float a = std::abs(x);
+        if (a >= 1.f)
+            return a * x / 2 - x * 3.f / 8.f + signum(x) / 10;
+        else {
+            float a = x * x;
+            return a * x / 4 - a * a * x / 40;
+        }
+    }
 };
 
+/**
+ * Based on x^2 function, multiplied by sign to preserve symmetry
+ **/
+class SecondOrderPolynomial : public Nonlinearity {
+public:
+    static float getSample(float x) {
+        if (std::abs(x) > 1)
+            return signum(x);
+        else
+            return x * (2.f - std::abs(x));
+    }
+    static float getAntiderivative1(float x) {
+        float xabs = std::abs(x);
+        if (xabs > 1.f)
+            return xabs - 1.f / 3;
+        else
+            return x * x * (1.f - xabs / 3);
+    }
+    static float getAntiderivative2(float x) {
+        float xabs = std::abs(x);
+        if (xabs > 1.f)
+            return x * xabs / 2 - x / 3 + signum(x) / 12;
+        else
+            return x * x * x * (1.f / 3 - xabs / 12);
+    }
+};
+
+/**
+ * Based on Andrew Simper coefficients for third order polynomial
+ **/
+class ThirdOrderPolynomial : public Nonlinearity {
+public:
+    static float getSample(float x) {
+        if (std::abs(x) >= 1.5f)
+            return signum(x);
+        else
+            return x - x * x * x * 4 / 27;
+    }
+    static float getAntiderivative1(float x) {
+        float a = std::abs(x);
+        if (a >= 1.5f)
+            return a - 9.f / 16.f;
+        else {
+            float b = x * x;
+            return b / 2 - b * b / 27;
+        }
+    }
+    static float getAntiderivative2(float x) {
+        float a = std::abs(x);
+        if (a >= 1.5f)
+            return a * x / 2 - x * 9 / 16 + signum(x) * 36 / 160;
+        else {
+            float b = a * a;
+            return b * x / 6 - b * b * x / 135;
+        }
+    }
+};
+
+class FourthOrderPolynomial : public Nonlinearity {
+public:
+    static float getSample(float x) {
+        if (std::abs(x) >= 1.f)
+            return signum(x);
+        else {
+            return x * x * x * (4 - std::abs(x)) - x * std::abs(x) * 6 + x * 4;
+        }
+    }
+    static float getAntiderivative1(float x) {
+        float a = std::abs(x);
+        if (a >= 1.f)
+            return a - 0.2f;
+        else {
+            float b = x * x;
+            float c = b * b;
+            return -a * c / 5 + c + b * 2 * (1.f - a);
+        }
+    }
+    static float getAntiderivative2(float x) {
+        float a = std::abs(x);
+        if (a >= 1.f)
+            return x * a / 2 - x / 5 + signum(x) / 30.f;
+        else {
+            float b = a * a;
+            return b * b * x * (-a / 30 + 1 / 5) + x * b * (-a / 2 + 2.f / 3);
+        }
+    }
+};
+
+
+/**
+ * Uses x / sqrt(1 + x ^ 2) function
+ **/
+class AlgebraicSaturator : public Nonlinearity {
+public:
+    static float getSample(float x) {
+        return x / sqrtf(1 + x * x);
+    }
+    static float getAntiderivative1(float x) {
+        return sqrtf(1.f + x * x) - 1.f;
+    }
+    static float getAntiderivative2(float x) {
+        float a = sqrtf(1.f + x * x);
+        return 0.5f * (x * a + fast_logf(x + a)) - x;
+    }
+};
+
+/**
+ * Popular tanh saturator.
+ * Note: Computing second derivative is too untrivial and expensive
+ **/
 class TanhSaturator : public Nonlinearity {
 public:
     static float getSample(float x) {
@@ -124,6 +192,11 @@ public:
     }
 };
 
+/**
+ * Distortion based on arctangent function.
+ * 
+ * Note: can't be used for wavefolding as it doesn't reach +-1
+ **/
 class ArctanSaturator : public Nonlinearity {
 public:
     static float getSample(float x) {
@@ -138,6 +211,9 @@ public:
     }
 };
 
+/**
+ * Sinusoid function distortion
+ **/
 class SineSaturator : public Nonlinearity {
 public:
     static float getSample(float x) {
@@ -161,6 +237,39 @@ public:
     }
 };
 
+
+/**
+ * Based on sin^2 function
+ **/
+class QuadraticSineSaturator : public Nonlinearity {
+public:
+    static float getSample(float x) {
+        if (std::abs(x) >= 1)
+            return signum(x);
+        else {
+            float a = sin(M_PI_2 * x);
+            return std::abs(a) * a;
+        }
+    }
+    static float getAntiderivative1(float x) {
+        if (std::abs(x) >= 1)
+            return std::abs(x) - 0.5f;
+        else {
+            return signum(x) * 0.5f * (x - sin(M_PI * x) / M_PI);
+        }
+    }
+    static float getAntiderivative2(float x) {
+        if (std::abs(x) >= 1)
+            return x * std::abs(x) / 2 - x / 2 + sign(x)(0.25 - 1.f / (M_PI * M_PI));
+        else {
+            return sign(x) / (M_PI * M_PI * 2) * (M_PI * M_PI * x * x / 2 + cos(M_PI * x) - 1.f);
+        }
+    }
+};
+
+/**
+ * A rather extreme distortion based on sin^3 function
+ **/
 class CubicSineSaturator : public Nonlinearity {
 public:
     static float getSample(float x) {
@@ -189,53 +298,32 @@ public:
     }
 };
 
-class QuadraticSaturator : public Nonlinearity {
-public:
-    static float getSample(float x) {
-        if (std::abs(x) > 1)
-            return signum(x);
-        else
-            return x * (2.f - std::abs(x));
-    }
-
-    static float getAntiderivative1(float x) {
-        float xabs = std::abs(x);
-        if (xabs > 1.f)
-            return xabs - 1.f / 3;
-        else
-            return x * x * (1.f - xabs / 3);
-    }
-};
 
 /**
- * Based on 1 / x function
+ * Based on 1 / 2x function
  */
 class ReciprocalSaturator : public Nonlinearity {
 public:
-    float getSample(float x) {
+    static float getSample(float x) {
         if (std::abs(x) > 0.5f)
-            return signum(x) - 0.25f / x;
+            return signum(x) - 0.25 / x;
         else
             return x;
     }
-    float getAntiderivative1(float x) {
+    static float getAntiderivative1(float x) {
         float xabs = std::abs(x);
         if (xabs > 0.5f)
-            return xabs - 0.5f * fast_logf(xabs) - c1;
+            return xabs - 0.25f * fast_logf(xabs) - 0.5f - M_LN2 / 4 + 0.125;
         else
             return x * x / 2;
     }
-    float getAntiderivative2(float x) {
+    static float getAntiderivative2(float x) {
         float xabs = std::abs(x);
         if (xabs > 0.5f)
-            return x * xabs / 2 - x * fast_logf(xabs) / 4 + c2 * x - signum(x) / 24;
+            return x * xabs / 2 - x * fast_logf(xabs) / 4 - x * (1.f / 8 + M_LN2 / 4) - signum(x) / 24;
         else
             return x * x * x / 6;
     }
-
-protected:
-    static constexpr float c1 = -3.f / 8 - M_LN2 / 4;
-    static constexpr float c2 = -1.f / 8 - M_LN2 / 4;
 };
 
 template <typename Function>
@@ -264,8 +352,23 @@ protected:
     static constexpr float thresh = 10.0e-2;
 };
 
+
 template <typename Function>
-class AntialiasedWaveshaperTemplate : public SignalProcessor, public Function {
+class AliasingWaveshaperTemplate : public SignalProcessor {
+public:
+    AntialiasedWaveshaperTemplate() = default;
+    ~AntialiasedWaveshaperTemplate() = default;
+    float process(float input) override {
+        return Function::getSample(input);
+    }
+
+protected:
+    float xn1, Fn, Fn1;
+    static constexpr float thresh = 10.0e-2;
+};
+
+template <typename Function>
+class AntialiasedWaveshaperTemplate : public SignalProcessor {
 public:
     AntialiasedWaveshaperTemplate() {
         reset();
@@ -280,7 +383,7 @@ public:
         }
     }
     float antialiasedClipN1(float x) {
-        Fn = this->getAntiderivative1(x);
+        Fn = Function::getAntiderivative1(x);
         float tmp = 0.0;
         if (std::abs(x - xn1) < thresh) {
             tmp = this->getSample(0.5f * (x + xn1));
@@ -295,6 +398,7 @@ public:
 
         return tmp;
     }
+
     void reset() {
         xn1 = 0.0f;
         Fn = 0.0f;
@@ -306,17 +410,36 @@ protected:
     static constexpr float thresh = 10.0e-2;
 };
 
+
+using HardClipper = WaveshaperTemplate<HardClip>;
+using CubicSaturator = WaveshaperTemplate<CubicSaturator>;
+using SecondOrderPolynomial = WaveshaperTemplate<SecondOrderPolynomial>;
+using SecondOrderPolynomial = WaveshaperTemplate<SecondOrderPolynomial>;
+using ThirdOrderPolynomial = WaveshaperTemplate<ThirdOrderPolynomial>;
+using FourthOrderPolynomial = WaveshaperTemplate<FourthOrderPolynomial>;
+using AlgebraicSaturator = WaveshaperTemplate<AlgebraicSaturator>;
+using TanhSaturator = WaveshaperTemplate<TanhSaturator>;
+using ArctanSaturator = WaveshaperTemplate<ArctanSaturator>;
+using SineSaturator = WaveshaperTemplate<SineSaturator>;
+using QuadraticSineSaturator = WaveshaperTemplate<QuadraticSineSaturator>;
+using CubicSineSaturator = WaveshaperTemplate<CubicSineSaturator>;
+using ReciprocalSaturator = WaveshaperTemplate<ReciprocalSaturator>;
+
+
 using AntialiasedHardClipper = AntialiasedWaveshaperTemplate<HardClip>;
-using AntialiasedAsymmetricHardClipper =
-    AntialiasedWaveshaperTemplate<AsymmetricHardClip>;
-using AntialiasedCubicSoftClipper = AntialiasedWaveshaperTemplate<CubicSoftClip>;
 using AntialiasedCubicSaturator = AntialiasedWaveshaperTemplate<CubicSaturator>;
-using AntialiasedQuadraticSaturator =
-    AntialiasedWaveshaperTemplate<QuadraticSaturator>;
-using AntialiasedArctanSaturator = AntialiasedWaveshaperTemplate<ArctanSaturator>;
+using AntialiasedSecondOrderPolynomial = AntialiasedWaveshaperTemplate<SecondOrderPolynomial>;
+using AntialiasedSecondOrderPolynomial = AntialiasedWaveshaperTemplate<SecondOrderPolynomial>;
+using AntialiasedThirdOrderPolynomial = AntialiasedWaveshaperTemplate<ThirdOrderPolynomial>;
+using AntialiasedFourthOrderPolynomial = AntialiasedWaveshaperTemplate<FourthOrderPolynomial>;
+using AntialiasedAlgebraicSaturator = AntialiasedWaveshaperTemplate<AlgebraicSaturator>;
 using AntialiasedTanhSaturator = AntialiasedWaveshaperTemplate<TanhSaturator>;
+using AntialiasedArctanSaturator = AntialiasedWaveshaperTemplate<ArctanSaturator>;
 using AntialiasedSineSaturator = AntialiasedWaveshaperTemplate<SineSaturator>;
+using AntialiasedQuadraticSineSaturator = AntialiasedWaveshaperTemplate<QuadraticSineSaturator>;
 using AntialiasedCubicSineSaturator = AntialiasedWaveshaperTemplate<CubicSineSaturator>;
-using AntialiasedReciprocalSaturator =
-    AntialiasedWaveshaperTemplate<ReciprocalSaturator>;
+using AntialiasedReciprocalSaturator = AntialiasedWaveshaperTemplate<ReciprocalSaturator>;
+
+
+
 #endif
