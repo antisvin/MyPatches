@@ -43,7 +43,7 @@ DESCRIPTION:
  * Chebyshev (2 ch.)           12%
  * Chebyshev x2 (2 ch.)        19%
  * Chebyshev x4 (2 ch)         47%
- * Chebyshev x4 (2 ch) interp. 60%
+ * Chebyshev x4 (2 ch) interp. 56%
  */
 
 #include "Patch.h"
@@ -54,8 +54,8 @@ DESCRIPTION:
 #include "ChebyshevPolynomial.hpp"
 #include "MonochromeScreenPatch.h"
 
-//#define USE_FM
-#define TONES 32
+#define USE_FM
+#define TONES 8
 // Up to 32 harmonics supported
 static const char* names[] = { "H1", "H2", "H3", "H4", "H5", "H6", "H7", "H8",
     "H9", "H10", "H11", "H12", "H13", "H14", "H15", "H16" ,
@@ -179,14 +179,19 @@ public:
             a = 1;
             r = (d - 0.80) * 5;
         } /* //.\\ */
-        float fm = getParameterValue(PARAMETER_E) * 0.2;
+        float fm = getParameterValue(PARAMETER_E);
         FloatArray left = buf.getSamples(LEFT_CHANNEL);
         FloatArray right = buf.getSamples(RIGHT_CHANNEL);
         hz.setTune(freq);
         fundamental = hz.getFrequency(left[0]);
         //right.multiply(fm);
         osc->setFrequency(fundamental);
+        #ifdef USE_FM
+        right.multiply(fm);
+        osc->generate(mix, right);
+        #else
         osc->generate(mix);
+        #endif
         for (int i = 0; i < TONES; i++) {
             float newlevel = getParameterValue(PatchParameterId(PARAMETER_AA + i));
             float distance = std::abs(centre - i);
