@@ -5,6 +5,7 @@
 #include "Sequence.h"
 #include "MonochromeAudioDisplay.hpp"
 
+/*
 #undef min
 #undef max
 #undef abs
@@ -15,6 +16,7 @@
 #undef pow
 #undef log
 #undef log10
+*/
 
 #include "daisysp.h"
 using namespace daisysp;
@@ -102,6 +104,7 @@ public:
 
   void noteOn(uint8_t note, uint16_t velocity, uint16_t samples){
     midinote = note;
+    setParameterValue(PARAMETER_A, (note-20)/80.0);    
     //voice->SetAccent(velocity / 4095.0);
     //(4095.0f*2));
     voice->Trig();
@@ -118,18 +121,6 @@ public:
     voice->SetStructure(structure);
     voice->SetBrightness(brightness);
     voice->SetDamping(damping);
-  }
-
-  void buttonChanged(PatchButtonId bid, uint16_t value, uint16_t samples){
-    if(bid >= MIDI_NOTE_BUTTON){
-      uint8_t note = bid-MIDI_NOTE_BUTTON;
-      // if(value)
-      // 	noteOn(note, value, samples);
-      // else
-      // 	noteOff(note, samples);
-      if(value)
-        setParameterValue(PARAMETER_A, (note-20)/80.0); // set basenote parameter
-    }
   }
 
   void processAudio(AudioBuffer& buffer){

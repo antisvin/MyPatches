@@ -83,23 +83,21 @@ public:
 
     ComplexFloat getSample();
 
-    void generate(AudioBuffer& output) override {
-        render<false>(output.getSize(), NULL, output.getSamples(0).getData(),
-            output.getSamples(1).getData());
+    void generate(ComplexFloatArray output) override {
+        render<false>(output.getSize(), NULL, output.getData());
     }
     ComplexFloat generate() override {
         ComplexFloat sample;
-        render<false>(1, nullptr, (float*)&sample.re, (float*)&sample.im);
+        render<false>(1, nullptr, &sample);
         return sample;
     }
     ComplexFloat generate(float fm) override {
         ComplexFloat sample;
-        render<true>(1, &fm, (float*)&sample.re, (float*)&sample.im);
+        render<true>(1, &fm, &sample);
         return sample;
     }
-    void generate(AudioBuffer& output, FloatArray fm) {
-        render<true>(output.getSize(), fm.getData(),
-            output.getSamples(0).getData(), output.getSamples(1).getData());
+    void generate(ComplexFloatArray output, FloatArray fm) {
+        render<true>(output.getSize(), fm.getData(), output.getData());
     }
 
 protected:
@@ -112,13 +110,13 @@ protected:
     float last_x, last_y;
 
     template <bool with_fm>
-    void render(size_t size, float* fm, float* out_x, float* out_y);
+    void render(size_t size, float* fm, ComplexFloat* out);
 };
 
 template <>
 template <bool with_fm>
 void DiscreteSummationOscillator<DSF1>::render(
-    size_t size, float* fm, float* out_x, float* out_y) {
+    size_t size, float* fm, ComplexFloat* out) {
     float a1 = powf(a, n + 1.f);
     float a2 = n + 1.f;
     float a3 = (1.f + a * a);
@@ -135,14 +133,15 @@ void DiscreteSummationOscillator<DSF1>::render(
             phase_re += fm_mod;
             phase_im += fm_mod;
         }
-        *out_x++ = gain *
+        out->re = gain *
             (cos(phase_re) - a * cos(phase_re - s) -
                 a1 * (cos(phase_re + s * a2) - a * cos(phase_re + n * s))) /
             (a3 - a4 * cos(s));
-        *out_y++ = gain *
+        out->im = gain *
             (sin(phase_im) - a * sin(phase_im - s) -
                 a1 * (sin(phase_im + s * a2) - a * sin(phase_im + n * s))) /
             (a3 - a4 * cos(s));
+        out++;
         phase += incr;
         s += b * incr;
     }
@@ -155,7 +154,7 @@ void DiscreteSummationOscillator<DSF1>::render(
 template <>
 template <bool with_fm>
 void DiscreteSummationOscillator<DSF2>::render(
-    size_t size, float* fm, float* out_x, float* out_y) {
+    size_t size, float* fm, ComplexFloat* out) {
     float a1 = (1.f + a * a);
     float a2 = 2.f * a;
     float gain = (1.f - a);
@@ -172,10 +171,11 @@ void DiscreteSummationOscillator<DSF2>::render(
         }
         _last_x =
             gain * (cos(phase_re) - a * cos(phase_re - s)) / (a1 - a2 * cos(s));
-        *out_x++ = _last_x;
+        out->re = _last_x;
         _last_y =
             gain * (sin(phase_im) - a * sin(phase_im - s)) / (a1 - a2 * cos(s));
-        *out_y++ = _last_y;
+        out->im = _last_y;
+        out++;
         phase += incr;
         s += b * incr;
     }
@@ -188,7 +188,7 @@ void DiscreteSummationOscillator<DSF2>::render(
 template <>
 template <bool with_fm>
 void DiscreteSummationOscillator<DSF3>::render(
-    size_t size, float* fm, float* out_x, float* out_y) {
+    size_t size, float* fm, ComplexFloat* out) {
     float a1 = powf(a, n + 1.f);
     float a2 = n + 1.f;
     float a3 = 1.f + a * a;
@@ -210,12 +210,13 @@ void DiscreteSummationOscillator<DSF3>::render(
             (cos(phase_re) - a * cos(phase_re - s) -
                 a1 * (cos(phase_re + s * a2) - a * cos(phase_re + n * s))) *
             b1;
-        *out_x++ = _last_x;
+        out->re = _last_x;
         _last_y = gain *
             (sin(phase_im) - a * sin(phase_im - s) -
                 a1 * (sin(phase_im + s * a2) - a * sin(phase_im + n * s))) *
             b1;
-        *out_y++ = _last_y;
+        out->im = _last_y;
+        out++;
         phase += incr;
         s += b * incr;
     }
@@ -228,7 +229,7 @@ void DiscreteSummationOscillator<DSF3>::render(
 template <>
 template <bool with_fm>
 void DiscreteSummationOscillator<DSF4>::render(
-    size_t size, float* fm, float* out_x, float* out_y) {
+    size_t size, float* fm, ComplexFloat* out) {
     float a1 = 1.f - a * a;
     float a2 = 1.f + a * a;
     float a3 = 2.f * a;
@@ -246,9 +247,10 @@ void DiscreteSummationOscillator<DSF4>::render(
         }
         float b1 = 1.f / (a2 - a3 * cos(s));
         _last_x = gain * a1 * cos(phase_re) * b1;
-        *out_x++ = _last_x;
+        out->re = _last_x;
         _last_y = gain * a1 * sin(phase_im) * b1;
-        *out_y++ = last_y;
+        out->im = last_y;
+        out++;
         phase += incr;
         s += b * incr;
     }

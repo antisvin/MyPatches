@@ -5,7 +5,7 @@
 #include "SignalGenerator.h"
 
 template <typename OscA, typename OscB>
-class StereoMorphingOscillator : public MultiSignalGenerator {
+class StereoMorphingOscillator : public ComplexSignalGenerator {
 public:
     OscA osc_a;
     OscB osc_b;
@@ -30,22 +30,14 @@ public:
     float getPhase() {
         return osc_a.getPhase();
     }
-    virtual void generate(AudioBuffer& output) {
-        FloatArray left = output.getSamples(0);
-        FloatArray right = output.getSamples(1);
+    virtual void generate(ComplexFloatArray output) {
         for (size_t i = 0; i < output.getSize(); i++) {
-            ComplexFloat sample = generate();
-            left[i] = sample.re;
-            right[i] = sample.im;
+            output[i] = generate();
         }
     }
-    virtual void generate(AudioBuffer& output, FloatArray fm) {
-        FloatArray left = output.getSamples(0);
-        FloatArray right = output.getSamples(1);
+    virtual void generate(ComplexFloatArray output, FloatArray fm) {
         for (size_t i = 0; i < output.getSize(); i++) {
-            ComplexFloat sample = generate(fm[i]);
-            left[i] = sample.re;
-            right[i] = sample.im;
+            output[i] = generate(fm[i]);
         }
     }
     ComplexFloat generate() {

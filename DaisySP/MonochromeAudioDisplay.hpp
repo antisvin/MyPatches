@@ -39,7 +39,7 @@ public:
 	skip++;
     }
     for(int i=skip; i<size && writepos < width; i+=divisions)
-      buffer[writepos++] = max(0, min(height*2, height + height*offset + height*samples[i]*gain));
+      buffer[writepos++] = max(int16_t(0), min(int16_t(height*2), int16_t(height + height*offset + height*samples[i]*gain)));
     if(writepos >= width)
       writepos = 0;
   }

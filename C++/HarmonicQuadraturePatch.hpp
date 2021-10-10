@@ -207,6 +207,8 @@ public:
         shaper->normalize();
         shaper->process(mix, mix);
         mix.copyTo(buf);
+        left.multiply(0.5f);
+        right.multiply(0.5f);
         float gainadjust = shaper->getGain();
         setParameterValue(PARAMETER_F, gainadjust);
         setParameterValue(PARAMETER_G, 1 - gainadjust);

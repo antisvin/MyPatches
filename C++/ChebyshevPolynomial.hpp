@@ -145,10 +145,10 @@ public:
     void updatePolynomials(Sample input);
 
 protected:
-    Sample polynomials[max_order + 1];
-    float coefficients[max_order + 1];
-    float coefficients_prev[max_order + 1];
-    float deltas[max_order + 1];
+    Sample polynomials[max_order + 1] {};
+    float coefficients[max_order + 1] {};
+    float coefficients_prev[max_order + 1] {};
+    float deltas[max_order + 1] {};
     float mult, gain;
     size_t block_size;
 };
@@ -163,6 +163,7 @@ public:
     using Base::create;
     using Base::destroy;
     using Base::process;
+    using Base::WeightedChebyshevPolynomialTemplate;
     void process(FloatArray input, FloatArray output) {
         for (size_t i = 0; i < input.getSize(); i++) {
             for (size_t j = 0; j < max_order + 1; j++) {

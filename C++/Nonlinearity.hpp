@@ -260,9 +260,9 @@ public:
     }
     static float getAntiderivative2(float x) {
         if (std::abs(x) >= 1)
-            return x * std::abs(x) / 2 - x / 2 + sign(x)(0.25 - 1.f / (M_PI * M_PI));
+            return x * std::abs(x) / 2 - x / 2 + signum(x) * (0.25 - 1.f / (M_PI * M_PI));
         else {
-            return sign(x) / (M_PI * M_PI * 2) * (M_PI * M_PI * x * x / 2 + cos(M_PI * x) - 1.f);
+            return signum(x) / (M_PI * M_PI * 2) * (M_PI * M_PI * x * x / 2 + cos(M_PI * x) - 1.f);
         }
     }
 };
@@ -356,8 +356,8 @@ protected:
 template <typename Function>
 class AliasingWaveshaperTemplate : public SignalProcessor {
 public:
-    AntialiasedWaveshaperTemplate() = default;
-    ~AntialiasedWaveshaperTemplate() = default;
+    AliasingWaveshaperTemplate() = default;
+    ~AliasingWaveshaperTemplate() = default;
     float process(float input) override {
         return Function::getSample(input);
     }
@@ -368,7 +368,7 @@ protected:
 };
 
 template <typename Function>
-class AntialiasedWaveshaperTemplate : public SignalProcessor {
+class AntialiasedWaveshaperTemplate : public SignalProcessor, public Function {
 public:
     AntialiasedWaveshaperTemplate() {
         reset();
@@ -411,19 +411,19 @@ protected:
 };
 
 
-using HardClipper = WaveshaperTemplate<HardClip>;
-using CubicSaturator = WaveshaperTemplate<CubicSaturator>;
-using SecondOrderPolynomial = WaveshaperTemplate<SecondOrderPolynomial>;
-using SecondOrderPolynomial = WaveshaperTemplate<SecondOrderPolynomial>;
-using ThirdOrderPolynomial = WaveshaperTemplate<ThirdOrderPolynomial>;
-using FourthOrderPolynomial = WaveshaperTemplate<FourthOrderPolynomial>;
-using AlgebraicSaturator = WaveshaperTemplate<AlgebraicSaturator>;
-using TanhSaturator = WaveshaperTemplate<TanhSaturator>;
-using ArctanSaturator = WaveshaperTemplate<ArctanSaturator>;
-using SineSaturator = WaveshaperTemplate<SineSaturator>;
-using QuadraticSineSaturator = WaveshaperTemplate<QuadraticSineSaturator>;
-using CubicSineSaturator = WaveshaperTemplate<CubicSineSaturator>;
-using ReciprocalSaturator = WaveshaperTemplate<ReciprocalSaturator>;
+using AliasingHardClipper = WaveshaperTemplate<HardClip>;
+using AliasingCubicSaturator = WaveshaperTemplate<CubicSaturator>;
+using AliasingSecondOrderPolynomial = WaveshaperTemplate<SecondOrderPolynomial>;
+using AliasingSecondOrderPolynomial = WaveshaperTemplate<SecondOrderPolynomial>;
+using AliasingThirdOrderPolynomial = WaveshaperTemplate<ThirdOrderPolynomial>;
+using AliasingFourthOrderPolynomial = WaveshaperTemplate<FourthOrderPolynomial>;
+using AliasingAlgebraicSaturator = WaveshaperTemplate<AlgebraicSaturator>;
+using AliasingTanhSaturator = WaveshaperTemplate<TanhSaturator>;
+using AliasingArctanSaturator = WaveshaperTemplate<ArctanSaturator>;
+using AliasingSineSaturator = WaveshaperTemplate<SineSaturator>;
+using AliasingQuadraticSineSaturator = WaveshaperTemplate<QuadraticSineSaturator>;
+using AliasingCubicSineSaturator = WaveshaperTemplate<CubicSineSaturator>;
+using AliasingReciprocalSaturator = WaveshaperTemplate<ReciprocalSaturator>;
 
 
 using AntialiasedHardClipper = AntialiasedWaveshaperTemplate<HardClip>;

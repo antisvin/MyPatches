@@ -10,6 +10,7 @@
 #include "Quantizer.hpp"
 #include "LockableValue.hpp"
 #include "MultiProcessor.hpp"
+#include "Nonlinearity.hpp"
 #include "Wavefolder.hpp"
 #include "Contour.hpp"
 #include "ColourScreenPatch.h"
@@ -82,7 +83,7 @@
 #define MAX_RATIO 5
 #define FM_AMOUNT_MULT (1.f / MAX_FM_AMOUNT)
 #define MAX_STEPS 16
-#define NUM_PIXELS 10240 // 6 bytes per pixel
+#define NUM_PIXELS 1024 // 6 bytes per pixel
 #define SCREEN_SMOOTH 0.9f
 
 #define P_TUNE PARAMETER_A
@@ -107,7 +108,7 @@ using SmoothParam = LockableValue<SmoothValue<float>, float>;
 using StiffParam = LockableValue<StiffValue<float>, float>;
 using MorphBase =
     StereoMorphingOscillator<DiscreteSummationOscillator<DSF2>, DiscreteSummationOscillator<DSF4>>;
-using StereoWavefolder = MultiProcessor<Wavefolder<HardClipper>, 2>;
+using StereoWavefolder = MultiProcessor<AntialiasedWaveFolder<HardClip>, 2>;
 using ColourBuffer = CircularBuffer<Pixel>;
 
 
@@ -132,6 +133,7 @@ private:
     DsfMorph* dsf;
     StereoWavefolder wavefolder;
     ComplexFloat attr;
+    ComplexFloatArray tmp;
     const float attr_a = -0.827;
     const float attr_b = -1.637;
     const float attr_c = 1.659;
@@ -229,11 +231,14 @@ public:
         pixels = ColourBuffer::create(NUM_PIXELS);
 
 #ifdef OVERSAMPLE_FACTOR
+        tmp = ComplexFloatArray::create(getBlockSize() * OVERSAMPLE_FACTOR);
         upsampler_pitch = UpSampler::create(1, OVERSAMPLE_FACTOR);
         upsampler_fm = UpSampler::create(1, OVERSAMPLE_FACTOR);
         downsampler_left = DownSampler::create(1, OVERSAMPLE_FACTOR);
         downsampler_right = DownSampler::create(1, OVERSAMPLE_FACTOR);
         oversample_buf = AudioBuffer::create(2, getBlockSize() * OVERSAMPLE_FACTOR);
+#else
+        tmp = ComplexFloatArray::create(getBlockSize());
 #endif
         setButton(BUTTON_A, false, 0);
         setButton(BUTTON_B, false, 0);
@@ -243,6 +248,7 @@ public:
     }
 
     ~DSF24ColorPatch() {
+        ComplexFloatArray::destroy(tmp);
         ColourBuffer::destroy(pixels);
         SineOscillator::destroy(mod);
         DsfMorph::destroy(dsf);
@@ -338,10 +344,10 @@ public:
             screen.setPixel(px.x, px.y, hue_16_bit);//
             //hue_16bit);
         }
+        pixels->setAll(Pixel());
     }
 
     void processAudio(AudioBuffer& buffer) {
-
         // CV output
         processCv();
         // attr_x * 0.5 + 0.5);
@@ -425,7 +431,8 @@ public:
         AudioBuffer& audio_buf = buffer;
 #endif
         // Generate quadrature output
-        dsf->generate(audio_buf, audio_buf.getSamples(1));
+        dsf->generate(tmp, audio_buf.getSamples(1));
+        tmp.copyTo(buffer);
 
         p_fold.update(getParameterValue(P_FOLD));
         float gain = 1.f + p_fold.getValue() * 3.f;

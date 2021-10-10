@@ -8,8 +8,8 @@ class QuadraturePhaser : public MultiSignalProcessor {
 private:
     QuadratureSineOscillator oscillator;
     float sr, control;
-    AudioBuffer* buffer1;
-    AudioBuffer* buffer2;
+    ComplexFloatArray buffer1;
+    ComplexFloatArray buffer2;
 
     /*
 
@@ -33,7 +33,7 @@ public:
      * object as input and output buffer
      */
     void process(AudioBuffer& input, AudioBuffer& output) override {
-        oscillator.generate(*buffer1);
+        oscillator.generate(buffer1);
         // Copy osc samples
         buffer2->getSamples(0).copyFrom(buffer1->getSamples(0));
         buffer2->getSamples(1).copyFrom(buffer1->getSamples(1));

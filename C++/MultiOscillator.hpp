@@ -119,6 +119,7 @@ protected:
 template <size_t limit>
 class MultiOscillator : public MultiOscillatorTemplate<limit, Oscillator> {
 public:
+    using MultiOscillatorTemplate<limit, Oscillator>::MultiOscillatorTemplate;
     // using MultiOscillatorTemplate<limit, Oscillator>::oscillators;
     // using MultiOscillatorTemplate<limit, Oscillator>::morph_idx;
     //    MultiOscillator()

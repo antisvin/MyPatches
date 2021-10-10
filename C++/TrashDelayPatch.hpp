@@ -2,28 +2,24 @@
 #define __TRASH_DELAY_PATCH_HPP__
 
 /**
- * Trash delay is a tempo synced delay, looper and audio corruption utility.
- *
- * ``I looked, and behold, a white horse, and he who sat on it had a trash delay.``
+ * Trash delay is a tempo synced delay and an audio corruption utility.
+ * 
+ * FX chain contains a delay with tap tempo, bitcrusher, sample rate reducer and saturator. Decimation
+ * can be performed before writing audio to delay's feedback buffer or after reading it. Saturator
+ * will add some harmonics and soft clip audio in case of excessive feedback levels.
  *
  * No PT2399 chips were hurt making this patch!
  *
- * Normal mode - this is an audio delay with nasty character.
  *
  * PARAM A - delay adjustment, set to max for starters, endless source of clicks and glitches if you change it
- * PARAM B - feedback, start from ~0.7 and adjust to taste
- * PARAM C - feedback bitcrusher level
- * PARAM D - feedback sample rate reduction
+ * PARAM B - feedback amount
+ * PARAM C - bitcrusher level
+ * PARAM D - sample rate reduction
  * PARAM F - output sine LFO clocked by tempo
- * PARAM G - output ramp LFO synced by temo
+ * PARAM G - output triangle LFO synced by temo
  * BUTTON 1 - tap tempo / clock input
- * BUTTON 2 - FREEEEEZE (go to looper mode, see below)
- * BUTTON 3 - clock output (based on LFO1 phase)
- *
- * In frozen mode delay buffer is not written to and unit behavior changes:
- * PARAM B - dry/wet mix (will be applied to normal mode too)
- * BUTTON 1 - retrigger loop (tempo is still synced like in delay mode)
- * BUTTON 2 - exit to delay mode
+ * BUTTON 2 - switch corruption location (inside/outside of delay's FB loop)
+ * BUTTON 3 - clock output (based on LFO phase)
  **/
 
 #include "Patch.h"
@@ -34,23 +30,26 @@
 #include "Bitcrusher.hpp"
 #include "SampleRateReducer.hpp"
 #include "SineOscillator.h"
-#include "RampOscillator.h"
+#include "TriangleOscillator.h"
 #include "SmoothValue.h"
 #include "DryWetProcessor.h"
+#include "Nonlinearity.hpp"
 
 //#define FAST_FRAC
-//#define USE_TRANSITION_LUT
+#define USE_TRANSITION_LUT
+//#define DECIMATE_PRE
 
 // static constexpr float max_delay_seconds = 10.f; // OWL2+
 static constexpr float max_delay_seconds = 2.7f; // Just enough for OWL1
-static constexpr float max_feedback = 0.75f;
+static constexpr float max_feedback = 1.2f; // Yes, we can! Excessive signal would be softclipped 
 
 #ifdef FAST_FRAC
 using Processor = FastFractionalDelayProcessor;
 #else
 using Processor = FractionalDelayProcessor<LINEAR_INTERPOLATION>;
 #endif
-using SawOscillator = RampOscillator<>;
+
+using Saturator = AntialiasedCubicSaturator;
 
 /**
  * This template was easier to rewrite than inherit from. Really.
@@ -116,7 +115,7 @@ public:
         , feedback_amount(0)
         , triggered(false)
         , frozen(false)
-        , freeze_index(0)
+        , decimate_outside(false)
         , delay_size(0)
         , old_delay_size(0)
         , needs_crossfade(false)
@@ -131,8 +130,8 @@ public:
     void setFeedback(float amount) {
         feedback_amount = amount;
     }
-    void freeze(bool state) {
-        frozen = state;
+    void setDecimationLocation(bool outside) {
+        decimate_outside = outside;
     }
     void trigger() {
         triggered = true;
@@ -148,12 +147,6 @@ public:
             break;
         case DS_DELAY:
             renderDelay(input, output);
-            break;
-        case DS_FADE_LOOP:
-            renderFadeLoop(input, output);
-            break;
-        case DS_LOOP:
-            renderLoop(input, output);
             break;
         }
     }
@@ -171,6 +164,7 @@ public:
 
 protected:
     DelayState state;
+    bool decimate_outside;
 
     template <DelayState state>
     void render(FloatArray input, FloatArray output);
@@ -184,7 +178,7 @@ protected:
     float old_delay_size;
     bool triggered;
     float delay_size;
-    size_t freeze_index;
+    Saturator saturator;
 
     SmoothFloat smooth_delay;
     float stepped_delay;
@@ -237,7 +231,7 @@ protected:
 
         Processor::setDelay(delay_size);
         Processor::buffer.setDelay(delay_size - size);
-        Processor::buffer.delay(output.getData(), size, delay_size);
+        Processor::buffer.read(output.getData(), size); // CRASHES with fast fractional delay buffer
 
         fadeIn(output);
 
@@ -247,154 +241,48 @@ protected:
     }
 
     void renderDelay(FloatArray input, FloatArray output) {
-        // Feedback processing
-        crusher.process(feedback_buffer, feedback_buffer);
-        reducer.process(feedback_buffer, feedback_buffer);
+#ifdef DECIMATE_PRE
+        if (decimate_outside) {
+            crusher.process(input, input);
+            reducer.process(input, input);
+        }
+        else 
+#endif
+        {
+            // Feedback processing        
+            crusher.process(feedback_buffer, feedback_buffer);
+            reducer.process(feedback_buffer, feedback_buffer);
+        }
         dc_fb.process(feedback_buffer, feedback_buffer);
         feedback_buffer.multiply(feedback_amount);
         input.add(feedback_buffer);
+        
+        saturator.process(input, input);
+
         // Delay processing
         size_t size = input.getSize();
         if (triggered) {
-            freeze_index = Processor::buffer.getReadIndex();
-//            freeze_index = Processor::buffer.getWriteIndex();
             triggered = false;
         }
         if (needs_crossfade) {
-//            Processor::smooth(input, fade_buffer, old_delay_size);
             Processor::process(input, fade_buffer);
             fadeOut(fade_buffer);
             needs_crossfade = false;
             renderFadeDelay(input, output);
-
-/*
-            size_t buffer_size = Processor::buffer.getSize();
-
-            //Processor::buffer.read(output.getData(), size);
-            Processor::setDelay(delay_size);
-            //Processor::buffer.read(output.getData(), size);
-            Processor::buffer.delay(output.getData(), size, delay_size);
-
-            fadeIn(output);
-            feedback_buffer.copyFrom(output);
-            output.add(fade_buffer);
-
-            needs_crossfade = false;
-*/
-        }
-        else if (frozen) {
-            fadeOut(input);
-            Processor::process(input, fade_buffer);
-            fadeOut(fade_buffer);
-
-
-            //fadeOut(output, fade_buffer);
-
-            // Store faded out buffer
-            size_t buffer_size = Processor::buffer.getSize();
-            //Processor::buffer.write(fade_buffer.getData(), size);
-            /// XXX 1
-            //Processor::buffer.moveWriteHead(buffer_size - size);
-            //Processor::buffer.write(fade_buffer.getData(), size);
-
-            /// XXX2
-//            freeze_index = Processor::buffer.getReadIndex();
-                
-            //freeze_index =
-            //    fmodf(Processor::buffer.getReadIndex() + buffer_size - delay_size,
-            //        buffer_size);
-
-            //freeze_index =
-            //    fmodf(Processor::buffer.getWriteIndex() + buffer_size - delay_size,
-            //        buffer_size);
-            //Processor::buffer.setReadIndex(freeze_index);
-            renderFadeLoop(input, output);
-#if 0            
-            feedback_buffer.scale(1.0, 0.0, fade_buffer);
-            output.copyFrom(fade_buffer);
-            size_t buffer_size = Processor::buffer.getSize();
-            freeze_index =
-                (Processor::buffer.getWriteIndex() + buffer_size - delay_size) %
-                buffer_size;
-            Processor::buffer.setReadIndex(freeze_index);
-#endif
         }
         else {
-
-            //Processor::process(input, output);
-            Processor::smooth(input, output, delay_size);
+            setDelay(delay_size);
+            Processor::process(input, output); // XXX was - Processor::smooth
 
             // Store feedback
             feedback_buffer.copyFrom(output);
         }
-    }
-
-    void renderFadeLoop(FloatArray input, FloatArray output) {
-        // Frozen delay won't write to buffer, input is discarded
-        Processor::buffer.read(output.getData(), output.getSize());
-
-        // output.scale(0.0, 1.0, output);
-        fadeIn(output);
-        output.add(fade_buffer);
-
-        // Looper FX
-        crusher.process(output, output);
-        reducer.process(output, output);
-        // dc_fb.process(output, output);
-
-        state = DS_LOOP;
-    }
-
-    void renderLoop(FloatArray input, FloatArray output) {
-        size_t size = input.getSize();
-        size_t buffer_size = Processor::buffer.getSize();
-
-        // Triggered manually or reached frozen buffer end
-        if (triggered ||
-            fmodf(Processor::buffer.getReadIndex() + buffer_size - freeze_index,
-                buffer_size) >= delay_size - size) {
-            triggered = false;
-            // Read buffer tail
-            Processor::buffer.read(fade_buffer.getData(), size);
-            //Processor::setDelay(buffer_size + delay_size);
-
-            // Prepare fade out buffer
-            fadeOut(fade_buffer);
-
-            if (frozen) {
-                // Rewind loop - no need to change state as it will return to current one
-                //Processor::setDelay(delay_size);
-                //Processor::buffer.setDelay(delay_size - size);
-                Processor::buffer.moveReadHead(buffer_size - delay_size - size);
-                renderFadeLoop(input, output);
-            }
-            else {
-                // Exiting looper mode - only done when looper reaches end.
-                // Alternatives would require jumping to different place in
-                // buffer or dropping part of buffer. Update write index
-                //Processor::buffer.setWriteIndex(freeze_index + delay_size);
-                Processor::buffer.setWriteIndex(Processor::buffer.getReadIndex());
-                Processor::buffer.setReadIndex(Processor::buffer.getReadIndex() + buffer_size - delay_size);
-                ///Processor::buffer.read()
-                // Unfreeze delay
-                fadeOut(feedback_buffer, fade_buffer);
-                renderFadeDelay(input, output);
-            }
-        }
-        else {
-            // Normal looper processing
-            // Frozen delay doesn't write to buffer, input is discarded
-            Processor::buffer.read(output.getData(), size);
-            // feedback_buffer.multiply(feedback_amount);
-            // output
-            // Processor::buffer.setWriteIndex(
-            //    Processor::buffer.getReadIndex() + delay_size);
-            // Looper FX
+#ifndef DECIMATE_PRE
+        if (decimate_outside) {
             crusher.process(output, output);
             reducer.process(output, output);
-            // dc.process(output, output);
-            feedback_buffer.copyFrom(output);
         }
+#endif
     }
 };
 
@@ -409,9 +297,10 @@ public:
     size_t max_delay_samples;
     AdjustableTapTempo* tempo;
     SineOscillator* lfo1;
-    SawOscillator* lfo2;
+    TriangleOscillator* lfo2;
     bool frozen;
     float delay_samples;
+    bool decimate_outside = false;
     
     //    SmoothFloat delay_samples;
 
@@ -426,7 +315,7 @@ public:
         registerParameter(PARAMETER_D, "Decimate");
         setParameterValue(PARAMETER_D, 0.f);
         registerParameter(PARAMETER_F, "LFO Sine>");
-        registerParameter(PARAMETER_G, "LFO Ramp>");
+        registerParameter(PARAMETER_G, "LFO Tri>");
         setButton(BUTTON_A, 0);
         setButton(BUTTON_B, 0);
         setButton(BUTTON_C, 0);
@@ -434,9 +323,9 @@ public:
         // delay_samples.lambda = 0.96;
 
         lfo1 = SineOscillator::create(getSampleRate() / getBlockSize());
-        lfo2 = SawOscillator::create(getSampleRate() / getBlockSize());
+        lfo2 = TriangleOscillator::create(getSampleRate() / getBlockSize());
         tempo = AdjustableTapTempo::create(getSampleRate(), max_delay_samples);
-        tempo->setSamples(max_delay_samples);
+        tempo->setPeriodInSamples(max_delay_samples);
 #ifdef FAST_FRAC
         delay1 = MixDelay::create(getBlockSize(), FloatArray::create(getBlockSize()),
             FloatArray::create(getBlockSize()), new float[max_delay_samples + 1],
@@ -460,7 +349,7 @@ public:
 
     ~TrashDelayPatch() {
         SineOscillator::destroy(lfo1);
-        SawOscillator::destroy(lfo2);
+        TriangleOscillator::destroy(lfo2);
         MixDelay::destroy(delay1);
         MixDelay::destroy(delay2);
         AdjustableTapTempo::destroy(tempo);
@@ -481,11 +370,12 @@ public:
             }
             break;
         case BUTTON_B:
-//            if (value)
-//                frozen = !frozen;
-//            setButton(BUTTON_B, frozen, 0);
-//            delay1->freeze(frozen);
-//            delay2->freeze(frozen);
+            if (value) {
+                decimate_outside = !decimate_outside;
+            }
+            setButton(BUTTON_B, decimate_outside, 0);
+            delay1->setDecimationLocation(decimate_outside);
+            delay2->setDecimationLocation(decimate_outside);
             break;
         }
     }
@@ -494,7 +384,7 @@ public:
         // Tap tempo
         tempo->clock(buffer.getSize());
         tempo->adjust((1.f - getParameterValue(PARAMETER_A)) * 4096);
-        delay_samples = min(tempo->getSamples(), max_delay_samples);
+        delay_samples = min(tempo->getPeriodInSamples(), max_delay_samples);
         // if (delay_samples > max_delay_samples) {
         //            delay_samples.reset(max_delay_samples);
         //}

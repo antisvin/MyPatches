@@ -8,11 +8,10 @@
 #include "TriangleOscillator.hpp"
 #include "VoltsPerOctave.h"
 #include "DelayLine.hpp"
-#include "QuadraturePhaser.hpp"
+#include "FrequencyShifter.h"
 #include "Quantizer.hpp"
 #include "LockableValue.hpp"
 #include "Resample.h"
-
 
 #define BASE_FREQ 55.f
 #define MAX_POLY 20.f
@@ -31,22 +30,27 @@
 using SmoothParam = LockableValue<SmoothValue<float>, float>;
 using StiffParam = LockableValue<StiffValue<float>, float>;
 
-
-class ModOscillator : public MultiOscillator {
+class ModOscillator : public MultiOscillator<5> {
 public:
-    ModOscillator(float freq, float sr = 48000)
-        : MultiOscillator(5, freq, sr)
-        , osc0(freq, sr / 2)
-        , osc1(freq, sr / 2)
-        , osc2(freq, sr)
-        , osc3(freq, sr * 2)
-        , osc4(freq, sr * 2) {
+    ModOscillator() = default;
+    void addOscillators(float freq, float sr = 48000) {
+        osc0.setSampleRate(sr / 2);
+        osc0.setFrequency(freq);
+        osc1.setSampleRate(sr / 2);
+        osc1.setFrequency(freq);
+        osc2.setSampleRate(sr);
+        osc2.setFrequency(freq);
+        osc3.setSampleRate(sr * 2);
+        osc3.setFrequency(freq);
+        osc4.setSampleRate(sr * 2);
+        osc4.setFrequency(freq);
         addOscillator(&osc0);
         addOscillator(&osc1);
         addOscillator(&osc2);
         addOscillator(&osc3);
         addOscillator(&osc4);
     }
+
 private:
     SquareOscillator osc0;
     SineOscillator osc1, osc2, osc3;
@@ -78,7 +82,7 @@ private:
     float fm_ratio;
     float fm_amount;
     VoltsPerOctave hz;
-    QuadraturePhaser* phaser;
+    DualSidebandFrequencyShifter* shifter;
     float lfo_sample;
     SmoothParam p_teeth = SmoothParam(0.01);
     SmoothParam p_npoly = SmoothParam(0.01);
@@ -97,16 +101,18 @@ private:
     }
 
 public:
-    PolygonalLichPatch()
-        : mod_lfo(0.75, getSampleRate() / getBlockSize())
+    PolygonalLichPatch() {
+        mod_lfo.setSampleRate(getSampleRate() / getBlockSize());
+        mod_lfo.setFrequency(0.75);
 #ifdef OVERSAMPLE_FACTOR
-        , osc(BASE_FREQ, getSampleRate() * OVERSAMPLE_FACTOR)
-        , mod(BASE_FREQ, getSampleRate() * OVERSAMPLE_FACTOR)
+        osc.setSampleRate(getSampleRate() * OVERSAMPLE_FACTOR);
+        osc.setFrequency(BASE_FREQ);
+        mod.addOscillators(BASE_FREQ, getSampleRate() * OVERSAMPLE_FACTOR);
 #else
-        , osc(BASE_FREQ, getSampleRate())
-        , mod(BASE_FREQ, getSampleRate())
+        osc.setSampleRate(getSampleRate());
+        osc.setFrequency(BASE_FREQ);
+        mod.addOscillators(BASE_FREQ, getSampleRate());
 #endif
-    {
         registerParameter(PARAMETER_A, "Tune");
         registerParameter(PARAMETER_B, "NPoly");
         registerParameter(PARAMETER_C, "Teeth");
@@ -115,7 +121,7 @@ public:
         setParameterValue(PARAMETER_AA, 0.0);
         registerParameter(PARAMETER_AB, "FM Mod Shape");
         setParameterValue(PARAMETER_AB, 0.0);
-#ifdef EXT_FM        
+#ifdef EXT_FM
         registerParameter(PARAMETER_AC, "Ext FM Amount");
         setParameterValue(PARAMETER_AC, 0.0);
 #else
@@ -140,16 +146,17 @@ public:
         p_rotation.rawValue().lambda = 0.9;
         p_shift.rawValue().lambda = 0.9;
         p_chaos.rawValue().lambda = 0.9;
-        
+
 #ifdef OVERSAMPLE_FACTOR
         upsampler_pitch = UpSampler::create(1, OVERSAMPLE_FACTOR);
         upsampler_fm = UpSampler::create(1, OVERSAMPLE_FACTOR);
         downsampler_left = DownSampler::create(1, OVERSAMPLE_FACTOR);
         downsampler_right = DownSampler::create(1, OVERSAMPLE_FACTOR);
         oversample_buf = AudioBuffer::create(2, getBlockSize() * OVERSAMPLE_FACTOR);
-        phaser = QuadraturePhaser::create(getSampleRate(), getBlockSize() * OVERSAMPLE_FACTOR);
+        shifter = DualSidebandFrequencyShifter::create(
+            getSampleRate() * OVERSAMPLE_FACTOR);
 #else
-        phaser = QuadraturePhaser::create(getSampleRate(), getBlockSize());
+        shifter = DualSidebandFrequencyShifter::create(getSampleRate());
 #endif
         setButton(BUTTON_A, false, 0);
         setButton(BUTTON_B, false, 0);
@@ -158,8 +165,8 @@ public:
 #endif
     }
 
-    ~PolygonalLichPatch(){
-        QuadraturePhaser::destroy(phaser);
+    ~PolygonalLichPatch() {
+        DualSidebandFrequencyShifter::destroy(shifter);
 #ifdef OVERSAMPLE_FACTOR
         UpSampler::destroy(upsampler_pitch);
         UpSampler::destroy(upsampler_fm);
@@ -185,9 +192,9 @@ public:
     }
 
     void buttonChanged(PatchButtonId bid, uint16_t value, uint16_t samples) override {
-        switch(bid){
+        switch (bid) {
         case BUTTON_A:
-            if(value)
+            if (value)
                 isModeA = !isModeA;
             setButton(BUTTON_A, isModeA, 0);
             if (isModeA) {
@@ -197,9 +204,9 @@ public:
             lockAll();
             break;
         case BUTTON_B:
-            if(value)
+            if (value)
                 isModeB = !isModeB;
-            setButton(BUTTON_B, isModeB, 0);        
+            setButton(BUTTON_B, isModeB, 0);
             if (isModeB) {
                 setButton(BUTTON_A, false, 0);
                 isModeA = false;
@@ -230,16 +237,16 @@ public:
 
         // Tuning
         float tune = -4.0 + getParameterValue(PARAMETER_A) * 4.0;
-        #ifndef QUANTIZER
+#ifndef QUANTIZER
         hz.setTune(tune);
-        #endif
-        // Carrier / modulator frequency
-        #ifdef QUANTIZER
+#endif
+// Carrier / modulator frequency
+#ifdef QUANTIZER
         float volts = quantizer.process(tune + hz.sampleToVolts(left[0]));
         float freq = hz.voltsToHertz(volts);
-        #else
+#else
         float freq = hz.getFrequency(left[0]);
-        #endif
+#endif
 
         // Update params in FM settings
         if (isModeA) {
@@ -256,10 +263,8 @@ public:
             p_npoly.update(getParameterValue(PARAMETER_B));
             p_teeth.update(getParameterValue(PARAMETER_C));
             p_quantize.update(getParameterValue(PARAMETER_D));
-            osc.setParams(
-                updateQuant(p_quantize.getValue()),
-                p_npoly.getValue(),
-                p_teeth.getValue());
+            osc.setParams(updateQuant(p_quantize.getValue()),
+                p_npoly.getValue(), p_teeth.getValue());
         }
 
 #ifdef EXT_FM
@@ -267,7 +272,8 @@ public:
         float ext_fm_amt = p_ext_amount.getValue();
 #else
         env_copy.copyFrom(right);
-        float ext_env_amt = p_ext_amount.update(getParameterValue(PARAMETER_AC)).getValue();
+        float ext_env_amt =
+            p_ext_amount.update(getParameterValue(PARAMETER_AC)).getValue();
         env_copy.multiply(ext_env_amt);
 #endif
         p_fm_amount.update(getParameterValue(PARAMETER_AA));
@@ -275,9 +281,9 @@ public:
         p_fm_shape.update(getParameterValue(PARAMETER_AB));
         fm_ratio = p_fm_shape.getValue();
         p_rotation.update(getParameterValue(PARAMETER_AD));
-        phaser->setAmount(p_rotation.getValue() * 0.0001);
-        p_shift.update(getParameterValue(PARAMETER_AE));
-        phaser->setControl(p_shift.getValue());
+        shifter->setFrequency(p_rotation.getValue() * 1000);
+        // p_shift.update(getParameterValue(PARAMETER_AE));
+        // phaser->setControl(p_shift.getValue());
 
         osc.setFrequency(freq);
 #ifdef OVERSAMPLE_FACTOR
@@ -306,10 +312,10 @@ public:
         AudioBuffer& audio_buf = buffer;
 #endif
         // Generate quadrature output
-        //return;
-        //osc.generate(audio_buf);
+        // return;
+        // osc.generate(audio_buf);
         osc.generate(audio_buf, audio_buf.getSamples(1));
-        phaser->process(audio_buf, audio_buf);
+        shifter->process(audio_buf, audio_buf);
 
 #ifdef OVERSAMPLE_FACTOR
         downsampler_left->process(oversample_buf->getSamples(0), left);
