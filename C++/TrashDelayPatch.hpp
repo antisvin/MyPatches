@@ -24,7 +24,7 @@
 
 #include "Patch.h"
 #include "DelayProcessor.h"
-#include "FeedbackProcessor.h"
+//#include "FeedbackProcessor.h"
 #include "DcBlockingFilter.h"
 #include "TapTempo.h"
 #include "Bitcrusher.hpp"
@@ -36,8 +36,9 @@
 #include "Nonlinearity.hpp"
 
 //#define FAST_FRAC
+//#define CIRCULAR
 #define USE_TRANSITION_LUT
-//#define DECIMATE_PRE
+#define DECIMATE_PRE
 
 // static constexpr float max_delay_seconds = 10.f; // OWL2+
 static constexpr float max_delay_seconds = 2.7f; // Just enough for OWL1
@@ -45,8 +46,10 @@ static constexpr float max_feedback = 1.2f; // Yes, we can! Excessive signal wou
 
 #ifdef FAST_FRAC
 using Processor = FastFractionalDelayProcessor;
+#elif defined CIRCULAR
+using Processor = CrossFadingDelayProcessor;
 #else
-using Processor = FractionalDelayProcessor<LINEAR_INTERPOLATION>;
+using Processor = FractionalDelayProcessor<HERMITE_INTERPOLATION>;
 #endif
 
 using Saturator = AntialiasedCubicSaturator;
@@ -124,7 +127,7 @@ public:
     void setDelay(float delay) {
         old_delay_size = delay_size;
         delay_size = delay;
-        if (abs(delay_size - old_delay_size) > 32.f)
+        if (abs(delay_size - old_delay_size) >= 64.f)
             needs_crossfade = true;
     }
     void setFeedback(float amount) {
@@ -153,8 +156,13 @@ public:
 
     template <typename... Args>
     static FbDelay* create(size_t blocksize, Args&&... args) {
+#ifdef CIRCULAR
         return new FbDelay<Processor>(FloatArray::create(blocksize),
             FloatArray::create(blocksize), std::forward<Args>(args)...);
+#else
+        return new FbDelay<Processor>(FloatArray::create(blocksize),
+            FloatArray::create(blocksize), std::forward<Args>(args)...);
+#endif
     }
     static void destroy(FbDelay* obj) {
         FloatArray::destroy(obj->feedback_buffer);
@@ -180,8 +188,7 @@ protected:
     float delay_size;
     Saturator saturator;
 
-    SmoothFloat smooth_delay;
-    float stepped_delay;
+    //float stepped_delay;
 
     inline void fadeIn(FloatArray data) {
 #ifdef USE_TRANSITION_LUT
@@ -191,16 +198,6 @@ protected:
         }
 #else
         data.scale(0.f, 1.f, data);
-#endif
-    }
-    inline void fadeIn(FloatArray input, FloatArray output) {
-#ifdef USE_TRANSITION_LUT
-        size_t size = input.getSize();
-        for (size_t i = 0; i < size; i++) {
-            output[i] = input[i] * fade_in_lut[i];
-        }
-#else
-        input.scale(0.f, 1.f, output);
 #endif
     }
     inline void fadeOut(FloatArray data) {
@@ -226,12 +223,21 @@ protected:
 
     void renderFadeDelay(FloatArray input, FloatArray output) {
         // Refetch previous buffer to be used as feedback
+        #ifdef CIRCULAR
+        size_t buffer_size = this->ringbuffer->getSize();
+        #else
         size_t buffer_size = Processor::buffer.getSize();
+        #endif
         size_t size = input.getSize();
 
+
+//        Processor::buffer.setDelay(delay_size - size);
+        Processor::buffer.setDelay(delay_size);
+//        Processor::process(input, output);
+//        Processor::buffer.read(output.getData(), size); // CRASHES with fast fractional delay buffer
+        Processor::buffer.delay(output.getData(), size, delay_size);
+//        Processor::buffer.delay(output.getData(), size, delay_size);
         Processor::setDelay(delay_size);
-        Processor::buffer.setDelay(delay_size - size);
-        Processor::buffer.read(output.getData(), size); // CRASHES with fast fractional delay buffer
 
         fadeIn(output);
 
@@ -271,8 +277,9 @@ protected:
             renderFadeDelay(input, output);
         }
         else {
-            setDelay(delay_size);
+            Processor::setDelay(delay_size);
             Processor::process(input, output); // XXX was - Processor::smooth
+//            setDelay(delay_size);
 
             // Store feedback
             feedback_buffer.copyFrom(output);
@@ -295,6 +302,7 @@ public:
     MixDelay* delay1;
     MixDelay* delay2;
     size_t max_delay_samples;
+    SmoothFloat smooth_delay;
     AdjustableTapTempo* tempo;
     SineOscillator* lfo1;
     TriangleOscillator* lfo2;
@@ -307,7 +315,7 @@ public:
     TrashDelayPatch() {
         max_delay_samples = max_delay_seconds * getSampleRate();
         registerParameter(PARAMETER_A, "Delay");
-        setParameterValue(PARAMETER_A, 0.f);
+        setParameterValue(PARAMETER_A, 1.f);
         registerParameter(PARAMETER_B, "Feedback");
         setParameterValue(PARAMETER_B, 0.5f);
         registerParameter(PARAMETER_C, "Crush");
@@ -333,6 +341,14 @@ public:
         delay2 = MixDelay::create(getBlockSize(), FloatArray::create(getBlockSize()),
             FloatArray::create(getBlockSize()), new float[max_delay_samples + 1],
             new float[max_delay_samples + 1], max_delay_samples);
+#elif defined CIRCULAR
+        delay1 = MixDelay::create(getBlockSize(),
+            FloatArray::create(getBlockSize()), FloatArray::create(getBlockSize()),
+            new float[max_delay_samples + 1], max_delay_samples);
+        delay2 = MixDelay::create(getBlockSize(),
+            FloatArray::create(getBlockSize()), FloatArray::create(getBlockSize()),
+            new float[max_delay_samples + 1], max_delay_samples);
+
 #else
         delay1 = MixDelay::create(getBlockSize(),
             FloatArray::create(getBlockSize()), FloatArray::create(getBlockSize()),
@@ -385,6 +401,7 @@ public:
         tempo->clock(buffer.getSize());
         tempo->adjust((1.f - getParameterValue(PARAMETER_A)) * 4096);
         delay_samples = min(tempo->getPeriodInSamples(), max_delay_samples);
+        
         // if (delay_samples > max_delay_samples) {
         //            delay_samples.reset(max_delay_samples);
         //}
@@ -405,12 +422,12 @@ public:
         FloatArray left = buffer.getSamples(0);
 
         delay1->setFeedback(fb);
-        delay1->process(left, left);
         delay1->setDelay(delay_samples);
+        delay1->process(left, left);
         FloatArray right = buffer.getSamples(1);
         delay2->setFeedback(fb);
-        delay2->process(right, right);
         delay2->setDelay(delay_samples);
+        delay2->process(right, right);
 
         // Tempo synced LFO
         lfo1->setFrequency(tempo->getFrequency());
@@ -419,6 +436,7 @@ public:
         setParameterValue(PARAMETER_F, lfo1->generate() * 0.5 + 0.5);
         setParameterValue(PARAMETER_G, lfo2->generate() * 0.5 + 0.5);
         setButton(BUTTON_C, lfo1->getPhase() < M_PI);
+        setButton(BUTTON_D, 1);
     }
 };
 #endif
