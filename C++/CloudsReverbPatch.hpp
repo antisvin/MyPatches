@@ -2,12 +2,12 @@
 #include "Patch.h"
 
 #define P_AMOUNT    PARAMETER_A
-#define P_TIME      PARAMETER_B
+#define P_DECAY     PARAMETER_B
 #define P_DIFFUSION PARAMETER_C
 #define P_LPF       PARAMETER_D
 #define P_GAIN      PARAMETER_AA
 
-using CloudsReverb = DattorroReverb<false>;
+using CloudsReverb = DattorroReverb<true>;
 
 class CloudsReverbPatch : public Patch {
 public:
@@ -15,15 +15,16 @@ public:
     CloudsReverbPatch() {
         registerParameter(P_AMOUNT, "Amount");
         setParameterValue(P_AMOUNT, 0.75);
-        registerParameter(P_TIME, "Time");
-        setParameterValue(P_TIME, 0.7);
+        registerParameter(P_DECAY, "Decay");
+        setParameterValue(P_DECAY, 0.7);
         registerParameter(P_DIFFUSION, "Diffusion");
         setParameterValue(P_DIFFUSION, 0.7);
-        registerParameter(P_LPF, "LPF");
+        registerParameter(P_LPF, "Damping");
         setParameterValue(P_LPF, 0.7);
         registerParameter(P_GAIN, "Gain");
         setParameterValue(P_GAIN, 0.5);
         reverb = CloudsReverb::create(getSampleRate(), clouds_delays);
+        reverb->setModulation(10, 60, 4680, 100);
     }
     ~CloudsReverbPatch() {
         CloudsReverb::destroy(reverb);
@@ -34,10 +35,9 @@ public:
 
         float reverb_amount = getParameterValue(P_AMOUNT);
         reverb->setAmount(reverb_amount);
-        reverb->setTime(0.35f + 0.63f * reverb_amount);
-        reverb->setTime(getParameterValue(P_TIME));
+        reverb->setDecay(getParameterValue(P_DECAY));
         reverb->setDiffusion(getParameterValue(P_DIFFUSION));
-        reverb->setLp(getParameterValue(P_LPF));
+        reverb->setDamping(getParameterValue(P_LPF));
         reverb->process(buffer, buffer);
     }
 };

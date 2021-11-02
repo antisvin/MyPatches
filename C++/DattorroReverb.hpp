@@ -9,23 +9,25 @@
 #include "InterpolatingCircularBuffer.h"
 #include "DryWetProcessor.h"
 
-template <bool with_smear = true, size_t num_delays = 10>
+template <bool with_smear = true>
 class DattorroReverb : public MultiSignalProcessor {
     using LFO = SineOscillator;
     using DelayBuffer = InterpolatingCircularFloatBuffer<LINEAR_INTERPOLATION>;
-
+    static constexpr size_t num_delays = 10;
 public:
     DattorroReverb() = default;
     DattorroReverb(DelayBuffer** delays, LFO* lfo1, LFO* lfo2)
         : delays(delays)
         , lfo1(lfo1)
         , lfo2(lfo2)
-        , lp(0.7f)
+        , damping(0)
         , lp1_state(0)
         , lp2_state(0)
-        , diffusion(0.625f)
+        , diffusion(0)
         , amount(0)
-        , reverb_time(0) {
+        , decay(0)
+        , lfo_amount1(0)
+        , lfo_amount2(0) {
         lfo1->setFrequency(0.517f);
         lfo2->setFrequency(0.293f);
         for (size_t i = 0; i < num_delays; i++) {
@@ -39,8 +41,8 @@ public:
         // smearing; and to the two long delays for a slow shimmer/chorus effect.
 
         const float kap = diffusion;
-        const float klp = lp;
-        const float krt = reverb_time;
+        const float klp = damping;
+        const float krt = decay;
 
         size_t size = input.getSize();
 
@@ -54,20 +56,35 @@ public:
 
         right.copyFrom(left);
 
+        size_t lfo1_read_offset, lfo1_write_offset, lfo2_read_offset;
+        if constexpr(with_smear) {
+            lfo1_read_offset = delays[0]->getWriteIndex() + delays[0]->getSize() - lfo_offset1;
+            lfo1_write_offset = delays[0]->getWriteIndex() + 100; // Hardcoded for now
+        }
+        else {
+            lfo1_read_offset = delays[6]->getWriteIndex() + delays[6]->getSize() - lfo_offset1;
+        }
+        lfo2_read_offset = delays[9]->getWriteIndex() + delays[9]->getSize() - lfo_offset2;
+
         while (size--) {
             float acc = 0.f;
 
             // Smear AP1 inside the loop.
             if constexpr (with_smear) {
-                delays[0]->delay(left_ptr, left_ptr, 1,
-                    float(delays[0]->getSize() - 61) + lfo2->generate() * 30 + 10);
+                // Interpolated read with an LFO
+                float t = delays[0]->readAt(
+                    fmodf(
+                        lfo1_read_offset++ - (lfo1->generate() + 1) * lfo_amount1,
+                    delays[0]->getSize()));
+                // Write back to buffer
+                delays[0]->writeAt(lfo1_write_offset++, t);
             }
 
             acc += *left_ptr;
             // c.Read(*left + *right, gain);
 
             // Diffuse through 4 allpasses.
-            for (size_t i = with_smear ? 1 : 0; i < 4; i++) {
+            for (size_t i = 0; i < 4; i++) {
                 processAPF(delays[i], acc, kap);
             }
             // Store a copy, since allpass output will be used by both delay branches in parallel
@@ -76,15 +93,13 @@ public:
             // Main reverb loop.
             // Modulate interpolated delay line
             acc += delays[9]->readAt(
-                       float(delays[9]->getWriteIndex() + delays[9]->getSize() - 26) +
-                       lfo1->generate() * 25) *
-                krt;
+                (lfo2->generate() + 1) * lfo_amount2 + lfo2_read_offset++
+            ) * krt;
             // Filter followed by two APFs
             processLPF(lp1_state, acc);
             processAPF(delays[4], acc, -kap);
             processAPF(delays[5], acc, kap);
             delays[6]->write(acc);
-            // acc *= 2;
 
             *left_ptr += (acc - *left_ptr) * amount;
             *left_ptr++;
@@ -94,10 +109,8 @@ public:
                 acc += delays[6]->read() * krt;
             }
             else {
-                acc += delays[6]->readAt(float(delays[6]->getWriteIndex() +
-                                             delays[6]->getSize() - 21) +
-                           lfo2->generate() * 20) *
-                    krt;
+                acc += delays[6]->readAt(                    
+                    (lfo1->generate() + 1) * lfo_amount1 + lfo1_read_offset++) * krt;
             }
             processLPF(lp2_state, acc);
             processAPF(delays[7], acc, kap);
@@ -112,22 +125,29 @@ public:
         this->amount = amount;
     }
 
-    void setTime(float reverb_time) {
-        this->reverb_time = reverb_time;
+    void setDecay(float decay) {
+        this->decay = decay;
     }
 
     void setDiffusion(float diffusion) {
         this->diffusion = diffusion;
     }
 
-    void setLp(float lp) {
-        this->lp = lp;
+    void setDamping(float damping) {
+        this->damping = damping;
     }
 
     void clear() {
         for (size_t i = 0; i < num_delays; i++) {
             delays[i]->clear();
         }
+    }
+
+    void setModulation(size_t offset1, size_t amount1, size_t offset2, size_t amount2) {
+        lfo_offset1 = offset1;
+        lfo_amount1 = amount1 / 2;
+        lfo_offset2 = offset2;
+        lfo_amount2 = amount2 / 2;
     }
 
     static DattorroReverb* create(float sr, const size_t* delay_lengths) {
@@ -147,7 +167,7 @@ public:
         for (size_t i = 0; i < num_delays; i++) {
             DelayBuffer::destroy(reverb->delays[i]);
         }
-        delete reverb->delays;
+        delete[] reverb->delays;
         delete reverb;
     }
 
@@ -156,14 +176,15 @@ protected:
     LFO* lfo1;
     LFO* lfo2;
     float amount;
-    float reverb_time;
+    float decay;
     float diffusion;
-    float lp;
-    float lp1_state;
-    float lp2_state;
+    float damping;
+    float lp1_state, lp2_state;
+    size_t lfo_offset1, lfo_offset2;
+    size_t lfo_amount1, lfo_amount2;
 
     inline void processLPF(float& state, float& value) {
-        state += lp * (value - state);
+        state += damping * (value - state);
         value = state;
     }
 
@@ -202,7 +223,7 @@ const size_t clouds_delays[] = {
     1663,
     4782,
 };
-// Jon Dattorro, Effect Design* 1:  Reverberator  and  Other  Filters
+// Jon Dattorro, Effect Design 1:  Reverberator  and  Other  Filters
 const size_t dattorro_delays[] = {
     142,
     107,
