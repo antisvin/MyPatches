@@ -414,7 +414,6 @@ protected:
 using AliasingHardClipper = WaveshaperTemplate<HardClip>;
 using AliasingCubicSaturator = WaveshaperTemplate<CubicSaturator>;
 using AliasingSecondOrderPolynomial = WaveshaperTemplate<SecondOrderPolynomial>;
-using AliasingSecondOrderPolynomial = WaveshaperTemplate<SecondOrderPolynomial>;
 using AliasingThirdOrderPolynomial = WaveshaperTemplate<ThirdOrderPolynomial>;
 using AliasingFourthOrderPolynomial = WaveshaperTemplate<FourthOrderPolynomial>;
 using AliasingAlgebraicSaturator = WaveshaperTemplate<AlgebraicSaturator>;
@@ -425,10 +424,8 @@ using AliasingQuadraticSineSaturator = WaveshaperTemplate<QuadraticSineSaturator
 using AliasingCubicSineSaturator = WaveshaperTemplate<CubicSineSaturator>;
 using AliasingReciprocalSaturator = WaveshaperTemplate<ReciprocalSaturator>;
 
-
 using AntialiasedHardClipper = AntialiasedWaveshaperTemplate<HardClip>;
 using AntialiasedCubicSaturator = AntialiasedWaveshaperTemplate<CubicSaturator>;
-using AntialiasedSecondOrderPolynomial = AntialiasedWaveshaperTemplate<SecondOrderPolynomial>;
 using AntialiasedSecondOrderPolynomial = AntialiasedWaveshaperTemplate<SecondOrderPolynomial>;
 using AntialiasedThirdOrderPolynomial = AntialiasedWaveshaperTemplate<ThirdOrderPolynomial>;
 using AntialiasedFourthOrderPolynomial = AntialiasedWaveshaperTemplate<FourthOrderPolynomial>;
@@ -439,7 +436,5 @@ using AntialiasedSineSaturator = AntialiasedWaveshaperTemplate<SineSaturator>;
 using AntialiasedQuadraticSineSaturator = AntialiasedWaveshaperTemplate<QuadraticSineSaturator>;
 using AntialiasedCubicSineSaturator = AntialiasedWaveshaperTemplate<CubicSineSaturator>;
 using AntialiasedReciprocalSaturator = AntialiasedWaveshaperTemplate<ReciprocalSaturator>;
-
-
 
 #endif

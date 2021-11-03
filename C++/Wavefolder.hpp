@@ -61,7 +61,6 @@ public:
         return tmp;
     }
     float antialiasedFoldN2(float x) {
-
         // Folding with 2nd-order antialiasing
         Fn = foldFunctionN2(x);
         float tmp = 0.0;

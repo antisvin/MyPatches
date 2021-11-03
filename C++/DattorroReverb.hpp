@@ -9,11 +9,13 @@
 #include "InterpolatingCircularBuffer.h"
 #include "DryWetProcessor.h"
 
-template <bool with_smear = true>
+template <bool with_smear = true, typename Postprocessor = void>
 class DattorroReverb : public MultiSignalProcessor {
+private:
     using LFO = SineOscillator;
     using DelayBuffer = InterpolatingCircularFloatBuffer<LINEAR_INTERPOLATION>;
     static constexpr size_t num_delays = 10;
+    Postprocessor post[2];
 public:
     DattorroReverb() = default;
     DattorroReverb(DelayBuffer** delays, LFO* lfo1, LFO* lfo2)
@@ -28,8 +30,8 @@ public:
         , decay(0)
         , lfo_amount1(0)
         , lfo_amount2(0) {
-        lfo1->setFrequency(0.517f);
-        lfo2->setFrequency(0.293f);
+        lfo1->setFrequency(0.5);
+        lfo2->setFrequency(0.3);
         for (size_t i = 0; i < num_delays; i++) {
             delays[i]->setDelay((int)delays[i]->getSize() - 1);
         }
@@ -46,15 +48,11 @@ public:
 
         size_t size = input.getSize();
 
-        FloatArray left = input.getSamples(0);
-        FloatArray right = input.getSamples(1);
+        float* left_in = input.getSamples(0).getData();
+        float* right_in = input.getSamples(1).getData();
 
-        right.copyFrom(left);
-
-        float* left_ptr = left.getData();
-        float* right_ptr = right.getData();
-
-        right.copyFrom(left);
+        float* left_out = output.getSamples(0).getData();
+        float* right_out = output.getSamples(1).getData();
 
         size_t lfo1_read_offset, lfo1_write_offset, lfo2_read_offset;
         if constexpr(with_smear) {
@@ -67,8 +65,6 @@ public:
         lfo2_read_offset = delays[9]->getWriteIndex() + delays[9]->getSize() - lfo_offset2;
 
         while (size--) {
-            float acc = 0.f;
-
             // Smear AP1 inside the loop.
             if constexpr (with_smear) {
                 // Interpolated read with an LFO
@@ -80,7 +76,7 @@ public:
                 delays[0]->writeAt(lfo1_write_offset++, t);
             }
 
-            acc += *left_ptr;
+            float acc = (*left_in + *right_in) * 0.5;
             // c.Read(*left + *right, gain);
 
             // Diffuse through 4 allpasses.
@@ -101,8 +97,13 @@ public:
             processAPF(delays[5], acc, kap);
             delays[6]->write(acc);
 
-            *left_ptr += (acc - *left_ptr) * amount;
-            *left_ptr++;
+            if constexpr(std::is_void<Postprocessor>::value) 
+                *left_out = *left_in + (acc - *left_in) * amount;
+            else
+                *left_out = *left_in + (post[0].process(acc) - *left_in) * amount;
+
+            *left_out++;
+            *left_in++;
 
             acc = apout;
             if constexpr (with_smear) {
@@ -116,8 +117,12 @@ public:
             processAPF(delays[7], acc, kap);
             processAPF(delays[8], acc, -kap);
             delays[9]->write(acc);
-            *right_ptr += (acc - *right_ptr) * amount;
-            *right_ptr++;
+            if constexpr(std::is_void<Postprocessor>::value) 
+                *right_out = *right_in + (acc - *right_in) * amount;
+            else
+                *right_out = *right_in + (post[1].process(acc) - *right_in) * amount;
+            *right_out++;
+            *right_in++;
         }
     }
 
