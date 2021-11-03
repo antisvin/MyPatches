@@ -9,7 +9,9 @@
 #define P_DAMP      PARAMETER_D
 #define P_GAIN      PARAMETER_AA
 
-using Saturator = AntialiasedCubicSaturator;
+//using Saturator = AliasingTanhSaturator;
+//using Saturator = AntialiasedReciprocalSaturator;
+using Saturator = AntialiasedThirdOrderPolynomial;
 //using RingsReverb = DattorroReverb<false>;
 using RingsReverb = DattorroReverb<false, Saturator>;
 

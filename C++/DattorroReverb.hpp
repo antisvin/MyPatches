@@ -100,14 +100,12 @@ public:
             processLPF(lp1_state, acc);
             processAPF(delays[4], acc, -kap);
             processAPF(delays[5], acc, kap);
+            if constexpr (!std::is_empty<Postprocessor>::value)
+                acc = post[0].process(acc);
+
             delays[6]->write(acc);
 
-            if constexpr (std::is_empty<Postprocessor>::value)
-                *left_out = *left_in + (acc - *left_in) * amount;
-            else
-                *left_out = *left_in + (post[0].process(acc) - *left_in) * amount;
-
-            *left_out++;
+            *left_out++ = *left_in + (acc - *left_in) * amount;
             *left_in++;
 
             acc = apout;
@@ -122,12 +120,12 @@ public:
             processLPF(lp2_state, acc);
             processAPF(delays[7], acc, kap);
             processAPF(delays[8], acc, -kap);
+            if constexpr (!std::is_empty<Postprocessor>::value)
+                acc = post[1].process(acc);
+
             delays[9]->write(acc);
-            if constexpr (std::is_empty<Postprocessor>::value)
-                *right_out = *right_in + (acc - *right_in) * amount;
-            else
-                *right_out = *right_in + (post[1].process(acc) - *right_in) * amount;
-            *right_out++;
+
+            *right_out++ = *right_in + (acc - *right_in) * amount;
             *right_in++;
         }
     }
