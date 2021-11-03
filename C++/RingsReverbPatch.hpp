@@ -10,13 +10,13 @@
 #define P_GAIN      PARAMETER_AA
 
 using Saturator = AntialiasedCubicSaturator;
+//using RingsReverb = DattorroReverb<false>;
 using RingsReverb = DattorroReverb<false, Saturator>;
 
 class RingsReverbPatch : public Patch {
 public:
     RingsReverb* reverb;
     AudioBuffer* tmp;
-    Saturator saturators[2];
     SmoothFloat gain;
     
     RingsReverbPatch() {
@@ -41,8 +41,6 @@ public:
         FloatArray right = buffer.getSamples(1);
         gain = getParameterValue(P_GAIN) * 2;
         buffer.multiply(gain);
-        saturators[0].process(left, left);
-        saturators[1].process(right, right);
         float reverb_amount = getParameterValue(P_AMOUNT);
         reverb->setAmount(reverb_amount);
         reverb->setDecay(getParameterValue(P_DECAY));

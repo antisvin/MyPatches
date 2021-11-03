@@ -9,13 +9,16 @@
 #include "InterpolatingCircularBuffer.h"
 #include "DryWetProcessor.h"
 
-template <bool with_smear = true, typename Postprocessor = void>
+class bypass { };
+
+template <bool with_smear = true, typename Postprocessor = bypass>
 class DattorroReverb : public MultiSignalProcessor {
 private:
     using LFO = SineOscillator;
     using DelayBuffer = InterpolatingCircularFloatBuffer<LINEAR_INTERPOLATION>;
     static constexpr size_t num_delays = 10;
     Postprocessor post[2];
+
 public:
     DattorroReverb() = default;
     DattorroReverb(DelayBuffer** delays, LFO* lfo1, LFO* lfo2)
@@ -55,23 +58,25 @@ public:
         float* right_out = output.getSamples(1).getData();
 
         size_t lfo1_read_offset, lfo1_write_offset, lfo2_read_offset;
-        if constexpr(with_smear) {
-            lfo1_read_offset = delays[0]->getWriteIndex() + delays[0]->getSize() - lfo_offset1;
+        if constexpr (with_smear) {
+            lfo1_read_offset =
+                delays[0]->getWriteIndex() + delays[0]->getSize() - lfo_offset1;
             lfo1_write_offset = delays[0]->getWriteIndex() + 100; // Hardcoded for now
         }
         else {
-            lfo1_read_offset = delays[6]->getWriteIndex() + delays[6]->getSize() - lfo_offset1;
+            lfo1_read_offset =
+                delays[6]->getWriteIndex() + delays[6]->getSize() - lfo_offset1;
         }
-        lfo2_read_offset = delays[9]->getWriteIndex() + delays[9]->getSize() - lfo_offset2;
+        lfo2_read_offset =
+            delays[9]->getWriteIndex() + delays[9]->getSize() - lfo_offset2;
 
         while (size--) {
             // Smear AP1 inside the loop.
             if constexpr (with_smear) {
                 // Interpolated read with an LFO
                 float t = delays[0]->readAt(
-                    fmodf(
-                        lfo1_read_offset++ - (lfo1->generate() + 1) * lfo_amount1,
-                    delays[0]->getSize()));
+                    fmodf(lfo1_read_offset++ - (lfo1->generate() + 1) * lfo_amount1,
+                        delays[0]->getSize()));
                 // Write back to buffer
                 delays[0]->writeAt(lfo1_write_offset++, t);
             }
@@ -89,15 +94,15 @@ public:
             // Main reverb loop.
             // Modulate interpolated delay line
             acc += delays[9]->readAt(
-                (lfo2->generate() + 1) * lfo_amount2 + lfo2_read_offset++
-            ) * krt;
+                       (lfo2->generate() + 1) * lfo_amount2 + lfo2_read_offset++) *
+                krt;
             // Filter followed by two APFs
             processLPF(lp1_state, acc);
             processAPF(delays[4], acc, -kap);
             processAPF(delays[5], acc, kap);
             delays[6]->write(acc);
 
-            if constexpr(std::is_void<Postprocessor>::value) 
+            if constexpr (std::is_empty<Postprocessor>::value)
                 *left_out = *left_in + (acc - *left_in) * amount;
             else
                 *left_out = *left_in + (post[0].process(acc) - *left_in) * amount;
@@ -110,14 +115,15 @@ public:
                 acc += delays[6]->read() * krt;
             }
             else {
-                acc += delays[6]->readAt(                    
-                    (lfo1->generate() + 1) * lfo_amount1 + lfo1_read_offset++) * krt;
+                acc += delays[6]->readAt((lfo1->generate() + 1) * lfo_amount1 +
+                           lfo1_read_offset++) *
+                    krt;
             }
             processLPF(lp2_state, acc);
             processAPF(delays[7], acc, kap);
             processAPF(delays[8], acc, -kap);
             delays[9]->write(acc);
-            if constexpr(std::is_void<Postprocessor>::value) 
+            if constexpr (std::is_empty<Postprocessor>::value)
                 *right_out = *right_in + (acc - *right_in) * amount;
             else
                 *right_out = *right_in + (post[1].process(acc) - *right_in) * amount;
@@ -162,7 +168,7 @@ public:
         }
         LFO* lfo1 = LFO::create(sr);
         LFO* lfo2 = LFO::create(sr);
-        
+
         return new DattorroReverb(delays, lfo1, lfo2);
     }
 
