@@ -11,13 +11,13 @@
 
 class bypass { };
 
-template <bool with_smear = true, typename Postprocessor = bypass>
+template <bool with_smear = true, typename Processor = bypass>
 class DattorroReverb : public MultiSignalProcessor {
 private:
     using LFO = SineOscillator;
     using DelayBuffer = InterpolatingCircularFloatBuffer<LINEAR_INTERPOLATION>;
     static constexpr size_t num_delays = 10;
-    Postprocessor post[2];
+    Processor processors[2];
 
 public:
     DattorroReverb() = default;
@@ -100,8 +100,8 @@ public:
             processLPF(lp1_state, acc);
             processAPF(delays[4], acc, -kap);
             processAPF(delays[5], acc, kap);
-            if constexpr (!std::is_empty<Postprocessor>::value)
-                acc = post[0].process(acc);
+            if constexpr (!std::is_empty<Processor>::value)
+                acc = processors[0].process(acc);
 
             delays[6]->write(acc);
 
@@ -120,14 +120,18 @@ public:
             processLPF(lp2_state, acc);
             processAPF(delays[7], acc, kap);
             processAPF(delays[8], acc, -kap);
-            if constexpr (!std::is_empty<Postprocessor>::value)
-                acc = post[1].process(acc);
+            if constexpr (!std::is_empty<Processor>::value)
+                acc = processors[1].process(acc);
 
             delays[9]->write(acc);
 
             *right_out++ = *right_in + (acc - *right_in) * amount;
             *right_in++;
         }
+    }
+
+    Processor& getProcessor(size_t index) {
+        return processors[index];
     }
 
     void setAmount(float amount) {

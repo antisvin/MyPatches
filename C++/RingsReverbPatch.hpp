@@ -2,6 +2,7 @@
 #include "Nonlinearity.hpp"
 #include "Patch.h"
 #include "SmoothValue.h"
+#include "BypassProcessor.hpp"
 
 #define P_AMOUNT    PARAMETER_A
 #define P_DECAY     PARAMETER_B
@@ -9,10 +10,7 @@
 #define P_DAMP      PARAMETER_D
 #define P_GAIN      PARAMETER_AA
 
-//using Saturator = AliasingTanhSaturator;
-//using Saturator = AntialiasedReciprocalSaturator;
-using Saturator = AntialiasedThirdOrderPolynomial;
-//using RingsReverb = DattorroReverb<false>;
+using Saturator = BypassProcessor<AntialiasedThirdOrderPolynomial>;
 using RingsReverb = DattorroReverb<false, Saturator>;
 
 class RingsReverbPatch : public Patch {
@@ -20,6 +18,7 @@ public:
     RingsReverb* reverb;
     AudioBuffer* tmp;
     SmoothFloat gain;
+    bool bypassed = true;
     
     RingsReverbPatch() {
         setParameterValue(P_AMOUNT, 0.75);
@@ -34,9 +33,25 @@ public:
         registerParameter(P_AMOUNT, "Amount");
         reverb = RingsReverb::create(getSampleRate(), rings_delays);
         reverb->setModulation(4460, 40, 6261, 50);
+        reverb->getProcessor(0).setBypass(bypassed);
+        reverb->getProcessor(1).setBypass(bypassed);
     }
     ~RingsReverbPatch() {
         RingsReverb::destroy(reverb);
+    }
+
+    void buttonChanged(PatchButtonId bid, uint16_t value, uint16_t samples) override {
+        switch (bid) {
+        case BUTTON_A:
+            if (value)
+                bypassed = !bypassed;
+            setButton(BUTTON_A, bypassed, 0);
+            reverb->getProcessor(0).setBypass(bypassed);
+            reverb->getProcessor(1).setBypass(bypassed);
+            break;
+        default:
+            break;
+        }
     }
     void processAudio(AudioBuffer& buffer) {     
         FloatArray left = buffer.getSamples(0);
@@ -50,6 +65,5 @@ public:
         reverb->setDiffusion(getParameterValue(P_DIFFUSION));
         reverb->setDamping(getParameterValue(P_DAMP));
         reverb->process(buffer, buffer);
-        buffer.multiply(0.75); // Leav some headroom for Jesus
     }
 };
