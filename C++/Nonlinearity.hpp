@@ -362,6 +362,14 @@ public:
         return Function::getSample(input);
     }
 
+    static AliasingWaveshaperTemplate* create() {
+        return new AliasingWaveshaperTemplate();
+    }
+
+    static void destroy(AliasingWaveshaperTemplate* waveshaper) {
+        delete waveshaper;
+    }
+
 protected:
     float xn1, Fn, Fn1;
     static constexpr float thresh = 10.0e-2;
@@ -405,6 +413,13 @@ public:
         Fn1 = 0.0f;
     }
 
+    static AntialiasedWaveshaperTemplate* create() {
+        return new AntialiasedWaveshaperTemplate();
+    }
+
+    static void destroy(AntialiasedWaveshaperTemplate* waveshaper) {
+        delete waveshaper;
+    }
 protected:
     float xn1, Fn, Fn1;
     static constexpr float thresh = 10.0e-2;

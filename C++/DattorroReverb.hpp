@@ -1,13 +1,7 @@
 #ifndef __DATTORRO_REVERB_HPP__
 #define __DATTORRO_REVERB_HPP__
 
-#include "SignalProcessor.h"
-#include "TriangleOscillator.h"
-#include "SineOscillator.h"
-#include "CircularBuffer.h"
-#include "FractionalCircularBuffer.h"
-#include "InterpolatingCircularBuffer.h"
-#include "DryWetProcessor.h"
+#include "OpenWareLibrary.h"
 
 class bypass { };
 
@@ -17,12 +11,17 @@ private:
     using LFO = SineOscillator;
     using DelayBuffer = InterpolatingCircularFloatBuffer<LINEAR_INTERPOLATION>;
     static constexpr size_t num_delays = 10;
-    Processor processors[2];
+    Processor** processors;
 
 public:
     DattorroReverb() = default;
-    DattorroReverb(DelayBuffer** delays, LFO* lfo1, LFO* lfo2)
-        : delays(delays)
+    DattorroReverb(CrossFadingCircularFloatBuffer* pre_delay, FloatArray tmp,
+        DelayBuffer** delays, LFO* lfo1, LFO* lfo2, Processor** processors)
+        : pre_delay(pre_delay)
+        , pre_delay_prev(0)
+        , pre_delay_next(0)
+        , tmp(tmp)
+        , delays(delays)
         , lfo1(lfo1)
         , lfo2(lfo2)
         , damping(0)
@@ -32,11 +31,12 @@ public:
         , amount(0)
         , decay(0)
         , lfo_amount1(0)
-        , lfo_amount2(0) {
+        , lfo_amount2(0)
+        , processors(processors) {
         lfo1->setFrequency(0.5);
         lfo2->setFrequency(0.3);
         for (size_t i = 0; i < num_delays; i++) {
-            delays[i]->setDelay((int)delays[i]->getSize() - 1);
+            delays[i]->setDelay((int)delays[i]->getSize());
         }
     }
     void process(AudioBuffer& input, AudioBuffer& output) {
@@ -53,7 +53,6 @@ public:
 
         float* left_in = input.getSamples(0).getData();
         float* right_in = input.getSamples(1).getData();
-
         float* left_out = output.getSamples(0).getData();
         float* right_out = output.getSamples(1).getData();
 
@@ -70,6 +69,13 @@ public:
         lfo2_read_offset =
             delays[9]->getWriteIndex() + delays[9]->getSize() - lfo_offset2;
 
+        tmp.copyFrom(input.getSamples(0));
+        tmp.add(input.getSamples(1));
+        tmp.multiply(0.5);
+
+        float* in = tmp.getData();
+        pre_delay->delay(in, in, tmp.getSize(), pre_delay_prev, pre_delay_next);
+
         while (size--) {
             // Smear AP1 inside the loop.
             if constexpr (with_smear) {
@@ -81,7 +87,7 @@ public:
                 delays[0]->writeAt(lfo1_write_offset++, t);
             }
 
-            float acc = (*left_in + *right_in) * 0.5;
+            float acc = *in++;
             // c.Read(*left + *right, gain);
 
             // Diffuse through 4 allpasses.
@@ -101,7 +107,7 @@ public:
             processAPF(delays[4], acc, -kap);
             processAPF(delays[5], acc, kap);
             if constexpr (!std::is_empty<Processor>::value)
-                acc = processors[0].process(acc);
+                acc = processors[0]->process(acc);
 
             delays[6]->write(acc);
 
@@ -121,7 +127,7 @@ public:
             processAPF(delays[7], acc, kap);
             processAPF(delays[8], acc, -kap);
             if constexpr (!std::is_empty<Processor>::value)
-                acc = processors[1].process(acc);
+                acc = processors[1]->process(acc);
 
             delays[9]->write(acc);
 
@@ -131,7 +137,7 @@ public:
     }
 
     Processor& getProcessor(size_t index) {
-        return processors[index];
+        return *processors[index];
     }
 
     void setAmount(float amount) {
@@ -150,6 +156,11 @@ public:
         this->damping = damping;
     }
 
+    void setPreDelay(size_t pre_delay) {
+        pre_delay_prev = pre_delay_next;
+        pre_delay_next = pre_delay;
+    }
+
     void clear() {
         for (size_t i = 0; i < num_delays; i++) {
             delays[i]->clear();
@@ -163,7 +174,9 @@ public:
         lfo_amount2 = amount2 / 2;
     }
 
-    static DattorroReverb* create(float sr, const size_t* delay_lengths) {
+    template <typename... Args>
+    static DattorroReverb* create(size_t pre_delay_max, size_t block_size,
+        float sr, const size_t* delay_lengths, Args&&... args) {
         DelayBuffer** delays = new DelayBuffer*[num_delays];
         for (size_t i = 0; i < num_delays; i++) {
             delays[i] = DelayBuffer::create(delay_lengths[i]);
@@ -171,7 +184,20 @@ public:
         LFO* lfo1 = LFO::create(sr);
         LFO* lfo2 = LFO::create(sr);
 
-        return new DattorroReverb(delays, lfo1, lfo2);
+        CrossFadingCircularFloatBuffer* pre_delay =
+            CrossFadingCircularFloatBuffer::create(pre_delay_max, block_size);
+        FloatArray tmp = FloatArray::create(block_size);
+
+        if constexpr (std::is_empty<Processor>::value) {
+            return new DattorroReverb(
+                pre_delay, tmp, delays, lfo1, lfo2, new Processor[2]);
+        }
+        else {
+            Processor** processors = new Processor*[2];
+            processors[0] = Processor::create(std::forward<Args>(args)...);
+            processors[1] = Processor::create(std::forward<Args>(args)...);
+            return new DattorroReverb(pre_delay, tmp, delays, lfo1, lfo2, processors);
+        }
     }
 
     static void destroy(DattorroReverb* reverb) {
@@ -181,6 +207,13 @@ public:
             DelayBuffer::destroy(reverb->delays[i]);
         }
         delete[] reverb->delays;
+        if constexpr (!std::is_empty<Processor>::value) {
+            Processor::destroy(reverb->processors[0]);
+            Processor::destroy(reverb->processors[1]);
+        }
+        CrossFadingCircularFloatBuffer::destroy(reverb->pre_delay);
+        FloatArray::destroy(reverb->tmp);
+        delete[] reverb->processors;
         delete reverb;
     }
 
@@ -193,10 +226,19 @@ protected:
     float diffusion;
     float damping;
     float lp1_state, lp2_state;
+    float hp1_state, hp2_state;
     size_t lfo_offset1, lfo_offset2;
     size_t lfo_amount1, lfo_amount2;
+    FloatArray tmp;
+    CrossFadingCircularFloatBuffer* pre_delay;
+    size_t pre_delay_prev, pre_delay_next;
 
     inline void processLPF(float& state, float& value) {
+        state += damping * (value - state);
+        value = state;
+    }
+
+    inline void processHPF(float& state, float& value) {
         state += damping * (value - state);
         value = state;
     }

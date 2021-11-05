@@ -73,6 +73,10 @@ public:
     }
 
     static BypassProcessor* create() {
+        return new BypassProcessor();
+    }
+    static void destroy(BypassProcessor* processor) {
+        delete processor;
     }
 
 protected:
