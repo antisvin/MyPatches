@@ -44,13 +44,13 @@ public:
     FFTMagnitudeShiftProcessor* processor;
     FFTMagnitudeShiftPatch() {
         processor = FFTMagnitudeShiftProcessor::create(getBlockSize(),
-            Window::HammingWindow, Window::TriangularWindow, FFT_SIZE);
+            Window::HannWindow, Window::HannWindow, FFT_SIZE);
     }
     ~FFTMagnitudeShiftPatch() {
         FFTMagnitudeShiftProcessor::destroy(processor);
     }
     void processAudio(AudioBuffer& buffer) {
-        auto bins_processor = processor->getBinsProcessor();
+        auto bins_processor = processor->getFrequencyDomainProcessor();
         bins_processor->setShift(getParameterValue(PARAMETER_A) * FFT_SIZE / 8);
         processor->process(buffer.getSamples(0), buffer.getSamples(0));
     }

@@ -16,7 +16,7 @@ public:
         , out_win(out_win), processor(processor) {
         fft->init(fft_size);
     }
-    FrequencyDomainProcessor* getBinsProcessor() {
+    FrequencyDomainProcessor* getFrequencyDomainProcessor() {
         return processor;
     }
     float process(float input) {
