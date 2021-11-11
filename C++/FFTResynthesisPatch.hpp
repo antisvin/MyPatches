@@ -17,13 +17,14 @@ public:
     }
 };
 
-using FFTResynthesisProcessor = FFTProcessor<ComplexBypass, 2048>;
+using FFTResynthesisProcessor = FFTProcessor<ComplexBypass, 2048, 256>;
 
 class FFTResynthesisPatch : public Patch {
 public:
     FFTResynthesisProcessor* processor;
     FFTResynthesisPatch() {
-        processor = FFTResynthesisProcessor::create(getBlockSize());
+        processor = FFTResynthesisProcessor::create(
+            getBlockSize(), Window::HannWindow, Window::HannWindow);
     }
     ~FFTResynthesisPatch() {
         FFTResynthesisProcessor::destroy(processor);
