@@ -1,5 +1,5 @@
 #include "OpenWareLibrary.h"
-#include "FFTProcessor.hpp"
+#include "FFTProcessor.h"
 
 class ComplexBypass : public ComplexSignalProcessor {
 public:
@@ -30,6 +30,7 @@ public:
         FFTResynthesisProcessor::destroy(processor);
     }
     void processAudio(AudioBuffer& buffer) {
+        buffer.getSamples(1).copyFrom(buffer.getSamples(0));
         processor->process(buffer.getSamples(0), buffer.getSamples(0));
     }
 };
