@@ -4,7 +4,7 @@
 class ComplexBypass : public ComplexSignalProcessor {
 public:
     void process(ComplexFloatArray input, ComplexFloatArray output) {
-        // Yup, do nothing at all!
+        output.copyFrom(input);
     }
     ComplexFloat process(ComplexFloat input) {
         return ComplexFloat();
