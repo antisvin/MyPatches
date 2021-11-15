@@ -10,16 +10,16 @@
  *
  * No PT2399 chips were hurt making this patch!
  *
- *
  * PARAM A - delay adjustment, set to max for starters, endless source of clicks and glitches if you change it
  * PARAM B - feedback amount
  * PARAM C - bitcrusher level
  * PARAM D - sample rate reduction
  * PARAM F - output sine LFO clocked by tempo
- * PARAM G - output triangle LFO synced by temo
+ * PARAM G - output saw LFO clocked and synced by tempo
  * BUTTON 1 - tap tempo / clock input
  * BUTTON 2 - switch corruption location (inside/outside of delay's FB loop)
  * BUTTON 3 - clock output (based on LFO phase)
+ * 
  **/
 
 #include "Patch.h"
@@ -30,27 +30,32 @@
 #include "Bitcrusher.hpp"
 #include "SampleRateReducer.hpp"
 #include "SineOscillator.h"
-#include "TriangleOscillator.h"
 #include "SmoothValue.h"
 #include "DryWetProcessor.h"
 #include "Nonlinearity.hpp"
 
-//#define FAST_FRAC
 //#define CIRCULAR
 #define USE_TRANSITION_LUT
 #define DECIMATE_PRE
 
-// static constexpr float max_delay_seconds = 10.f; // OWL2+
-static constexpr float max_delay_seconds = 2.7f; // Just enough for OWL1
+static constexpr float max_delay_seconds = 10.f; // OWL2+
+//static constexpr float max_delay_seconds = 2.7f; // Just enough for OWL1
 static constexpr float max_feedback = 1.2f; // Yes, we can! Excessive signal would be softclipped 
 
-#ifdef FAST_FRAC
-using Processor = FastFractionalDelayProcessor;
-#elif defined CIRCULAR
+#if defined CIRCULAR
 using Processor = CrossFadingDelayProcessor;
 #else
 using Processor = FractionalDelayProcessor<HERMITE_INTERPOLATION>;
 #endif
+
+class SawOscillator : public OscillatorTemplate<SawOscillator> {
+public:
+  static constexpr float begin_phase = 0;
+  static constexpr float end_phase = 1;
+  float getSample(){
+    return phase;
+  }
+};
 
 using Saturator = AntialiasedCubicSaturator;
 
@@ -230,13 +235,8 @@ protected:
         #endif
         size_t size = input.getSize();
 
-
-//        Processor::buffer.setDelay(delay_size - size);
         Processor::buffer.setDelay(delay_size);
-//        Processor::process(input, output);
-//        Processor::buffer.read(output.getData(), size); // CRASHES with fast fractional delay buffer
         Processor::buffer.delay(output.getData(), size, delay_size);
-//        Processor::buffer.delay(output.getData(), size, delay_size);
         Processor::setDelay(delay_size);
 
         fadeIn(output);
@@ -305,7 +305,7 @@ public:
     SmoothFloat smooth_delay;
     AdjustableTapTempo* tempo;
     SineOscillator* lfo1;
-    TriangleOscillator* lfo2;
+    SawOscillator* lfo2;
     bool frozen;
     float delay_samples;
     bool decimate_outside = false;
@@ -331,24 +331,16 @@ public:
         // delay_samples.lambda = 0.96;
 
         lfo1 = SineOscillator::create(getSampleRate() / getBlockSize());
-        lfo2 = TriangleOscillator::create(getSampleRate() / getBlockSize());
+        lfo2 = SawOscillator::create(getSampleRate() / getBlockSize());
         tempo = AdjustableTapTempo::create(getSampleRate(), max_delay_samples);
         tempo->setPeriodInSamples(max_delay_samples);
-#ifdef FAST_FRAC
-        delay1 = MixDelay::create(getBlockSize(), FloatArray::create(getBlockSize()),
-            FloatArray::create(getBlockSize()), new float[max_delay_samples + 1],
-            new float[max_delay_samples + 1], max_delay_samples);
-        delay2 = MixDelay::create(getBlockSize(), FloatArray::create(getBlockSize()),
-            FloatArray::create(getBlockSize()), new float[max_delay_samples + 1],
-            new float[max_delay_samples + 1], max_delay_samples);
-#elif defined CIRCULAR
+#if defined CIRCULAR
         delay1 = MixDelay::create(getBlockSize(),
             FloatArray::create(getBlockSize()), FloatArray::create(getBlockSize()),
             new float[max_delay_samples + 1], max_delay_samples);
         delay2 = MixDelay::create(getBlockSize(),
             FloatArray::create(getBlockSize()), FloatArray::create(getBlockSize()),
             new float[max_delay_samples + 1], max_delay_samples);
-
 #else
         delay1 = MixDelay::create(getBlockSize(),
             FloatArray::create(getBlockSize()), FloatArray::create(getBlockSize()),
@@ -365,7 +357,7 @@ public:
 
     ~TrashDelayPatch() {
         SineOscillator::destroy(lfo1);
-        TriangleOscillator::destroy(lfo2);
+        SawOscillator::destroy(lfo2);
         MixDelay::destroy(delay1);
         MixDelay::destroy(delay2);
         AdjustableTapTempo::destroy(tempo);
@@ -378,7 +370,7 @@ public:
         case BUTTON_A:
             tempo->trigger(set, samples);
             if (value) {
-                lfo1->reset();
+                lfo2->reset();
                 if (frozen) {
                     delay1->trigger();
                     delay2->trigger();
@@ -400,11 +392,12 @@ public:
         // Tap tempo
         tempo->clock(buffer.getSize());
         tempo->adjust((1.f - getParameterValue(PARAMETER_A)) * 4096);
-        delay_samples = min(tempo->getPeriodInSamples(), max_delay_samples);
+        delay_samples = tempo->getPeriodInSamples();
         
-        // if (delay_samples > max_delay_samples) {
-        //            delay_samples.reset(max_delay_samples);
-        //}
+        if (delay_samples > max_delay_samples) {
+            tempo->resetAdjustment(max_delay_samples);
+            delay_samples = max_delay_samples - 1;
+        }
 
         // Use quadratic crush factor
         float crush = 1.f - getParameterValue(PARAMETER_C);
@@ -430,12 +423,12 @@ public:
         delay2->process(right, right);
 
         // Tempo synced LFO
-        lfo1->setFrequency(tempo->getFrequency());
-        float lfoFreq = getSampleRate() / max_delay_samples;
-        lfo2->setFrequency(lfoFreq);
+        float freq = tempo->getFrequency();
+        lfo1->setFrequency(freq);
+        lfo2->setFrequency(freq);
         setParameterValue(PARAMETER_F, lfo1->generate() * 0.5 + 0.5);
-        setParameterValue(PARAMETER_G, lfo2->generate() * 0.5 + 0.5);
-        setButton(BUTTON_C, lfo1->getPhase() < M_PI);
+        setParameterValue(PARAMETER_G, lfo2->generate());
+        setButton(BUTTON_C, lfo2->getPhase() < M_PI);
         setButton(BUTTON_D, 1);
     }
 };
