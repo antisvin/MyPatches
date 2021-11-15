@@ -346,34 +346,18 @@ public:
         Fn = 0.0f;
         Fn1 = 0.0f;
     }
-
-protected:
-    float xn1, Fn, Fn1;
-    static constexpr float thresh = 10.0e-2;
-};
-
-
-template <typename Function>
-class AliasingWaveshaperTemplate : public SignalProcessor {
-public:
-    AliasingWaveshaperTemplate() = default;
-    ~AliasingWaveshaperTemplate() = default;
-    float process(float input) override {
-        return Function::getSample(input);
+    static WaveshaperTemplate* create() {
+        return new WaveshaperTemplate();
     }
 
-    static AliasingWaveshaperTemplate* create() {
-        return new AliasingWaveshaperTemplate();
-    }
-
-    static void destroy(AliasingWaveshaperTemplate* waveshaper) {
+    static void destroy(WaveshaperTemplate* waveshaper) {
         delete waveshaper;
     }
-
 protected:
     float xn1, Fn, Fn1;
     static constexpr float thresh = 10.0e-2;
 };
+
 
 template <typename Function>
 class AntialiasedWaveshaperTemplate : public SignalProcessor, public Function {

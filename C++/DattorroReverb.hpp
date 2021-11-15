@@ -190,7 +190,7 @@ public:
 
         if constexpr (std::is_empty<Processor>::value) {
             return new DattorroReverb(
-                pre_delay, tmp, delays, lfo1, lfo2, new Processor[2]);
+                pre_delay, tmp, delays, lfo1, lfo2, nullptr);
         }
         else {
             Processor** processors = new Processor*[2];
@@ -210,10 +210,10 @@ public:
         if constexpr (!std::is_empty<Processor>::value) {
             Processor::destroy(reverb->processors[0]);
             Processor::destroy(reverb->processors[1]);
+            delete[] reverb->processors;
         }
         CrossFadingCircularFloatBuffer::destroy(reverb->pre_delay);
-        FloatArray::destroy(reverb->tmp);
-        delete[] reverb->processors;
+        FloatArray::destroy(reverb->tmp);        
         delete reverb;
     }
 

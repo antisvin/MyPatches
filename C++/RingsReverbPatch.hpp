@@ -13,7 +13,7 @@
 #define MAX_PRE_DELAY 120 // In ms
 
 using Saturator = AntialiasedThirdOrderPolynomial;
-using RingsReverb = DattorroReverb<false, Saturator>;
+using RingsReverb = DattorroReverb<false>;
 
 class RingsReverbPatch : public Patch {
 public:
@@ -22,6 +22,7 @@ public:
     FloatArray tmp;
     const size_t pre_delay_max;
     SmoothStiffInt pre_delay = SmoothStiffInt(0.98, 16);
+    Saturator* saturators[2];
 
     RingsReverbPatch()
         : pre_delay_max(float(MAX_PRE_DELAY) / 1000 * getSampleRate()) {
@@ -42,9 +43,13 @@ public:
             pre_delay_max + getBlockSize(), getBlockSize(), getSampleRate(), rings_delays);
         reverb->setModulation(4460, 40, 6261, 50);
         tmp = FloatArray::create(getBlockSize());
+        saturators[0] = Saturator::create();
+        saturators[1] = Saturator::create();
     }
     ~RingsReverbPatch() {
         RingsReverb::destroy(reverb);
+        Saturator::destroy(saturators[0]);
+        Saturator::destroy(saturators[1]);
     }
     #if 0
     void buttonChanged(PatchButtonId bid, uint16_t value, uint16_t samples) override {
@@ -75,5 +80,7 @@ public:
         pre_delay = getParameterValue(P_PRE_DELAY) * pre_delay_max;
         reverb->setPreDelay(pre_delay);
         reverb->process(buffer, buffer);
+        saturators[0]->process(left, left);
+        saturators[1]->process(right, right);
     }
 };
