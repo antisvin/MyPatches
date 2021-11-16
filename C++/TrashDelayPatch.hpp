@@ -4,9 +4,10 @@
 /**
  * Trash delay is a tempo synced delay and an audio corruption utility.
  * 
- * FX chain contains a delay with tap tempo, bitcrusher, sample rate reducer and saturator. Decimation
- * can be performed before writing audio to delay's feedback buffer or after reading it. Saturator
- * will add some harmonics and soft clip audio in case of excessive feedback levels.
+ * FX chain contains a delay with adjustable tap tempo, bitcrusher, sample rate reducer
+ * and saturator. Decimation can be performed before writing audio to delay's feedback
+ * buffer or after reading it. Saturator will add some harmonics and soft clip audio in
+ * case of excessive feedback levels. Feedback levels may exceed reasonable amount.
  *
  * No PT2399 chips were hurt making this patch!
  *

@@ -6,6 +6,7 @@
 
 #define FFT_SIZE 256
 #define WAVE_SIZE 256
+#define P_ROTATE PARAMETER_B
 #define P_MORPH_X PARAMETER_C
 #define P_MORPH_Y PARAMETER_D
 
@@ -51,13 +52,16 @@ public:
     FloatArray tmp, samples;
     SmoothFloat morph_x = SmoothFloat(0.98);
     SmoothFloat morph_y = SmoothFloat(0.98);
+    SmoothInt rotation = SmoothInt(0.98);
     ComplexFloatArray kernel;
 
     ConvolutionWavFilterPatch() {
-        registerParameter(PARAMETER_C, "X");
-        setParameterValue(PARAMETER_C, 0.5);
-        registerParameter(PARAMETER_D, "Y");
-        setParameterValue(PARAMETER_D, 0.5);
+        registerParameter(P_ROTATE, "Rotate");
+        setParameterValue(P_ROTATE, 0.0);
+        registerParameter(P_MORPH_X, "X");
+        setParameterValue(P_MORPH_X, 0.5);
+        registerParameter(P_MORPH_Y, "Y");
+        setParameterValue(P_MORPH_Y, 0.5);
 
         Resource* resource = getResource("filter.wav");
         WavFile wav(resource->getData(), resource->getSize());
@@ -102,8 +106,8 @@ public:
     }
     void processAudio(AudioBuffer& buffer) {
         auto fft_processor = processors[0]->getFrequencyDomainProcessor();
-        morph_x = getParameterValue(PARAMETER_C);
-        morph_y = getParameterValue(PARAMETER_D);
+        morph_x = getParameterValue(P_MORPH_X);
+        morph_y = getParameterValue(P_MORPH_Y);
         updateKernel();
         processors[0]->process(buffer.getSamples(0), buffer.getSamples(0));
         processors[1]->process(buffer.getSamples(1), buffer.getSamples(1));
@@ -130,6 +134,7 @@ public:
             tmp[i] = s1;
         }
 
+
         for (size_t i = 0; i < len; i++) {
             float mag = tmp[i] * 0.5 + 0.5;
             float y_coord = sinf(M_PI * 2 * i / (len - 1));
@@ -139,6 +144,8 @@ public:
             // using sqrtf saves ~1% CPU on OWL2
             // kernel[i].setPolar(tmp[i] * 0.5 + 0.5, M_PI * 2 * i / (len - 1));
         }
+        rotation = int(getParameterValue(P_ROTATE) * 512) % 256;
+        std::rotate(&kernel[0], &kernel[rotation], &kernel[255]);
     }
 
 private:
