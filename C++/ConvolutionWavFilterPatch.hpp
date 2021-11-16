@@ -3,12 +3,19 @@
 #include "FFTProcessor.h"
 #include "SmoothValue.h"
 #include "WaveBank2D.hpp"
+#include "daisysp.h"
 
 #define FFT_SIZE 256
 #define WAVE_SIZE 256
 #define P_ROTATE PARAMETER_B
 #define P_MORPH_X PARAMETER_C
 #define P_MORPH_Y PARAMETER_D
+
+#define P_COMP_RATIO PARAMETER_AA
+#define P_COMP_THRESH PARAMETER_AB
+#define P_COMP_ATTACK PARAMETER_AC
+#define P_COMP_RELEASE PARAMETER_AD
+#define P_COMP_MAKEUP PARAMETER_AE
 
 using WaveBank = WaveBank2D<8, 8, 256>;
 // using WaveFactory = WaveBank2DFactory<8, 8, 256>;
@@ -54,6 +61,8 @@ public:
     SmoothFloat morph_y = SmoothFloat(0.98);
     SmoothInt rotation = SmoothInt(0.98);
     ComplexFloatArray kernel;
+    daisysp::Compressor* compressor;
+    bool automakeup = false;
 
     ConvolutionWavFilterPatch() {
         registerParameter(P_ROTATE, "Rotate");
@@ -62,6 +71,20 @@ public:
         setParameterValue(P_MORPH_X, 0.5);
         registerParameter(P_MORPH_Y, "Y");
         setParameterValue(P_MORPH_Y, 0.5);
+
+        registerParameter(P_COMP_RATIO, "Comp ratio");
+        setParameterValue(P_COMP_RATIO, 2.0 / 40);
+        registerParameter(P_COMP_THRESH, "Comp thresh");
+        setParameterValue(P_COMP_THRESH, -12.0 / -80);
+        registerParameter(P_COMP_ATTACK, "Comp attack");
+        setParameterValue(P_COMP_ATTACK, 0.1);
+        registerParameter(P_COMP_RELEASE, "Comp release");
+        setParameterValue(P_COMP_RELEASE, 0.1);
+        registerParameter(P_COMP_MAKEUP, "Comp makeup");
+        setParameterValue(P_COMP_MAKEUP, 0.0);
+        compressor = new daisysp::Compressor();
+        compressor->Init(getSampleRate());
+        compressor->AutoMakeup(false);
 
         Resource* resource = getResource("filter.wav");
         WavFile wav(resource->getData(), resource->getSize());
@@ -86,6 +109,19 @@ public:
         WaveBank::destroy(fft_bank);
         FloatArray::destroy(samples);
         FloatArray::destroy(tmp);
+        delete compressor;
+    }
+    void buttonChanged(PatchButtonId bid, uint16_t value, uint16_t samples) override {
+        switch (bid) {
+        case BUTTON_A:
+            if (value)
+                automakeup = !automakeup;
+            setButton(BUTTON_A, automakeup, 0);
+            compressor->AutoMakeup(automakeup);
+            break;
+        default:
+            break;
+        }
     }
     void processScreen(MonochromeScreenBuffer& screen) {
         uint16_t step = kernel.getSize() / screen.getWidth();
@@ -109,8 +145,20 @@ public:
         morph_x = getParameterValue(P_MORPH_X);
         morph_y = getParameterValue(P_MORPH_Y);
         updateKernel();
-        processors[0]->process(buffer.getSamples(0), buffer.getSamples(0));
-        processors[1]->process(buffer.getSamples(1), buffer.getSamples(1));
+        FloatArray left = buffer.getSamples(0);
+        FloatArray right = buffer.getSamples(1);
+        processors[0]->process(left, left);
+        processors[1]->process(right, right);
+
+        compressor->SetRatio(1.0 + getParameterValue(P_COMP_RATIO) * 39);
+        compressor->SetAttack(0.001 + getParameterValue(P_COMP_ATTACK) * 9.999);
+        compressor->SetRelease(0.001 + getParameterValue(P_COMP_RELEASE) * 9.999);
+        compressor->SetThreshold(getParameterValue(P_COMP_THRESH) * -80);
+        if (!automakeup)
+            compressor->SetMakeup(getParameterValue(P_COMP_MAKEUP) * 80);
+        compressor->ProcessBlock(left.getData(), left.getData(), getBlockSize());
+        compressor->ProcessBlock(right.getData(), right.getData(), getBlockSize());
+
     }
     void updateKernel() {
         float xf = morph_x * (X - 1);
