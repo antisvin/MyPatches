@@ -34,7 +34,7 @@ public:
         registerParameter(P_DAMP, "Damping");
         setParameterValue(P_DAMP, 0.6);
         registerParameter(P_GAIN, "Gain");
-        setParameterValue(P_GAIN, 0.5);
+        setParameterValue(P_GAIN, 1.0);
         registerParameter(P_AMOUNT, "Amount");
         setParameterValue(P_AMOUNT, 0.5);
         registerParameter(P_PRE_DELAY, "Pre-delay");
@@ -51,25 +51,10 @@ public:
         Saturator::destroy(saturators[0]);
         Saturator::destroy(saturators[1]);
     }
-    #if 0
-    void buttonChanged(PatchButtonId bid, uint16_t value, uint16_t samples) override {
-        switch (bid) {
-        case BUTTON_A:
-            if (value)
-                bypassed = !bypassed;
-            setButton(BUTTON_A, bypassed, 0);
-            reverb->getProcessor(0).setBypass(bypassed);
-            reverb->getProcessor(1).setBypass(bypassed);
-            break;
-        default:
-            break;
-        }
-    }
-    #endif
     void processAudio(AudioBuffer& buffer) {
         FloatArray left = buffer.getSamples(0);
         FloatArray right = buffer.getSamples(1);
-        gain = getParameterValue(P_GAIN) * 2;
+        gain = getParameterValue(P_GAIN) * 0.5;
         buffer.multiply(gain);
         float reverb_amount = getParameterValue(P_AMOUNT);
         reverb->setAmount(reverb_amount);

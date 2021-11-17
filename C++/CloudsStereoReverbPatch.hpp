@@ -1,4 +1,4 @@
-#include "DattorroReverb.hpp"
+#include "DattorroStereoReverb.hpp"
 #include "Patch.h"
 #include "Nonlinearity.hpp"
 #include "SmoothValue.h"
@@ -9,25 +9,18 @@
 #define P_DIFFUSION PARAMETER_C
 #define P_DAMP PARAMETER_D
 #define P_GAIN PARAMETER_AA
-#define P_PRE_DELAY PARAMETER_AB
-
-
-#define MAX_PRE_DELAY 120 // In ms
 
 using Saturator = BypassProcessor<AntialiasedThirdOrderPolynomial>;
-using CloudsReverb = DattorroReverb<true>;
+using CloudsReverb = DattorroStereoReverb<>;
 
-class CloudsReverbPatch : public Patch {
+class CloudsStereoReverbPatch : public Patch {
 public:
     CloudsReverb* reverb;
     SmoothFloat gain;
     bool bypassed = false;
-    const size_t pre_delay_max;
-    SmoothStiffInt pre_delay = SmoothStiffInt(0.98, 16);
     Saturator* saturators[2];
 
-    CloudsReverbPatch()
-        : pre_delay_max(float(MAX_PRE_DELAY) / 1000 * getSampleRate()) {
+    CloudsStereoReverbPatch() {
         registerParameter(P_AMOUNT, "Amount");
         setParameterValue(P_AMOUNT, 0.75);
         registerParameter(P_DECAY, "Decay");
@@ -37,18 +30,15 @@ public:
         registerParameter(P_DAMP, "Damping");
         setParameterValue(P_DAMP, 0.7);
         registerParameter(P_GAIN, "Gain");
-        setParameterValue(P_GAIN, 0.5);
-        registerParameter(P_PRE_DELAY, "Pre-delay");
-        setParameterValue(P_PRE_DELAY, 0.0);
-        reverb = CloudsReverb::create(pre_delay_max + getBlockSize(),
-            getBlockSize(), getSampleRate(), clouds_delays);
-        reverb->setModulation(10, 60, 4680, 100);
+        setParameterValue(P_GAIN, 1.0);
+        reverb = CloudsReverb::create(getBlockSize(), getSampleRate(), clouds_delays);
+        reverb->setModulation(3300, 80, 4680, 100);
         saturators[0] = Saturator::create();
         saturators[0]->setBypass(bypassed);
         saturators[1] = Saturator::create();
         saturators[1]->setBypass(bypassed);
     }
-    ~CloudsReverbPatch() {
+    ~CloudsStereoReverbPatch() {
         CloudsReverb::destroy(reverb);
         Saturator::destroy(saturators[0]);
         Saturator::destroy(saturators[1]);
@@ -68,9 +58,7 @@ public:
         }
     }
     void processAudio(AudioBuffer& buffer) {
-        FloatArray left = buffer.getSamples(0);
-        FloatArray right = buffer.getSamples(1);
-        gain = getParameterValue(P_GAIN) * 2;
+        gain = getParameterValue(P_GAIN) * 0.5;
         buffer.multiply(gain);
         float reverb_amount = getParameterValue(P_AMOUNT);
         reverb->setAmount(reverb_amount);
@@ -78,8 +66,11 @@ public:
         // reverb->setDecay(0.35 + reverb_amount * 0.63);
         reverb->setDiffusion(getParameterValue(P_DIFFUSION));
         reverb->setDamping(getParameterValue(P_DAMP));
-        pre_delay = getParameterValue(P_PRE_DELAY) * pre_delay_max;
-        reverb->setPreDelay(pre_delay);
         reverb->process(buffer, buffer);
+
+        for (int i = 0; i < 2; i++) {
+            FloatArray t = buffer.getSamples(i);
+            saturators[i]->process(t, t);
+        }
     }
 };
