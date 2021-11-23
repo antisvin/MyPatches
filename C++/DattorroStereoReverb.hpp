@@ -24,6 +24,9 @@ public:
         , damping(0)
         , lp1_state(0)
         , lp2_state(0)
+        , hp1_state(0)
+        , hp2_state(0)
+        , hpf_amount(0.05)
         , diffusion(0)
         , amount(0)
         , decay(0)
@@ -80,6 +83,7 @@ public:
             if constexpr (!std::is_empty<Processor>::value)
                 acc = processors[0]->process(acc);
 
+            processHPF(hp1_state, acc);
             delays[10]->write(acc);
 
             *left_out++ = *left_in + (acc - *left_in) * amount;
@@ -102,6 +106,7 @@ public:
             if constexpr (!std::is_empty<Processor>::value)
                 acc = processors[1]->process(acc);
 
+            processHPF(hp2_state, acc);
             delays[13]->write(acc);
 
             *right_out++ = *right_in + (acc - *right_in) * amount;
@@ -190,7 +195,7 @@ protected:
     float diffusion;
     float damping;
     float lp1_state, lp2_state;
-    float hp1_state, hp2_state;
+    float hp1_state, hp2_state, hpf_amount;
     size_t lfo_offset1, lfo_offset2;
     size_t lfo_amount1, lfo_amount2;
     FloatArray tmp;
