@@ -3,7 +3,6 @@
 #include "Patch.h"
 #include "Nonlinearity.hpp"
 #include "SmoothValue.h"
-#include "BypassProcessor.hpp"
 #include "DryWetProcessor.h"
 
 #define P_MIX PARAMETER_A
@@ -34,6 +33,8 @@ public:
         buf[1] = buf2;
         loopers[0]->Init(buf1, max_size);
         loopers[1]->Init(buf2, max_size);
+        loopers[0]->SetMode(daisysp::Looper::Mode::FRIPPERTRONICS);
+        loopers[1]->SetMode(daisysp::Looper::Mode::FRIPPERTRONICS);
     }
     void process(AudioBuffer& input, AudioBuffer& output) override {
         size_t size = output.getSize();
@@ -94,7 +95,6 @@ class LoopVerbPatch : public Patch {
 public:
     CloudsReverb* reverb;
     SmoothFloat gain;
-    bool bypassed = false;
     Saturator* saturators[2];
     LooperProcessor* looper;
 
@@ -133,9 +133,7 @@ public:
             if (value)
                 is_record = !is_record;
             setButton(BUTTON_A, is_record, 0);
-            if (is_record) {
-                looper->trigRecord();
-            }
+            looper->trigRecord();
             break;
         case BUTTON_B:
             if (value) {
@@ -147,18 +145,14 @@ public:
                 is_reverse = !is_reverse;
             }
             setButton(BUTTON_C, is_reverse, 0);
-            if (is_reverse) {
-                looper->toggleReverse();
-            }
+            looper->toggleReverse();
             break;
         case BUTTON_D:
             if (value) {
                 is_half_speed = !is_half_speed;
             }
             setButton(BUTTON_D, is_half_speed, 0);
-            if (is_half_speed) {
-                looper->toggleHalfSpeed();
-            }
+            looper->toggleHalfSpeed();
             break;
         default:
             break;

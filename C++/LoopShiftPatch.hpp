@@ -164,9 +164,7 @@ public:
             if (value)
                 is_record = !is_record;
             setButton(BUTTON_A, is_record, 0);
-            if (is_record) {
-                looper->trigRecord();
-            }
+            looper->trigRecord();
             break;
         case BUTTON_B:
             if (value) {
@@ -178,18 +176,14 @@ public:
                 is_reverse = !is_reverse;
             }
             setButton(BUTTON_C, is_reverse, 0);
-            if (is_reverse) {
-                looper->toggleReverse();
-            }
+            looper->toggleReverse();
             break;
         case BUTTON_D:
             if (value) {
                 is_half_speed = !is_half_speed;
             }
             setButton(BUTTON_D, is_half_speed, 0);
-            if (is_half_speed) {
-                looper->toggleHalfSpeed();
-            }
+            looper->toggleHalfSpeed();
             break;
         default:
             break;
