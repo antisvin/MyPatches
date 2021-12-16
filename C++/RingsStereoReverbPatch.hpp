@@ -4,10 +4,10 @@
 #include "SmoothValue.h"
 #include "BypassProcessor.hpp"
 
-#define P_AMOUNT PARAMETER_A
-#define P_DECAY PARAMETER_B
-#define P_DIFFUSION PARAMETER_C
-#define P_DAMP PARAMETER_D
+#define P_DECAY PARAMETER_A
+#define P_DIFFUSION PARAMETER_B
+#define P_DAMP PARAMETER_C
+#define P_AMOUNT PARAMETER_D
 #define P_MOD PARAMETER_E
 #define P_GAIN PARAMETER_AA
 
