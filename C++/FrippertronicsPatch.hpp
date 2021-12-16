@@ -113,6 +113,7 @@ public:
     SmoothFloat reverb_amount = SmoothFloat(0.99);
     SmoothFloat reverb_diffusion = SmoothFloat(0.99);
     SmoothFloat reverb_damping = SmoothFloat(0.98);
+    SmoothFloat ext_mod = SmoothFloat(0.98);
 
     bool is_record = false;
     bool is_half_speed = false;
@@ -131,6 +132,8 @@ public:
         setParameterValue(P_DIFFUSION, 0.7);
         registerParameter(P_DAMP, "Damping");
         setParameterValue(P_DAMP, 0.7);
+        registerParameter(P_MOD, "Exp");
+        setParameterValue(P_MOD, 0.0);
         registerParameter(P_GAIN, "Gain");
         setParameterValue(P_GAIN, 1.0);
         reverb = CloudsReverb::create(getBlockSize(), getSampleRate(), rings_delays);
@@ -219,13 +222,16 @@ public:
         looper->setMix(getParameterValue(P_MIX));
         looper->process(buffer, buffer);
 
-        //ext_mod = getParameterValue(P_MOD);
+        ext_mod = getParameterValue(P_MOD);
+        float raw_amount = getParameterValue(P_AMOUNT);
+        reverb_amount = raw_amount + (0.998 - raw_amount) * ext_mod;
         reverb_amount = getParameterValue(P_AMOUNT);
         reverb->setAmount(reverb_amount);
         reverb->setDecay(0.35 + reverb_amount * 0.63);
         reverb_diffusion = getParameterValue(P_DIFFUSION);
         reverb->setDiffusion(reverb_diffusion);
-        reverb_damping = getParameterValue(P_DAMP);
+        float raw_damping = getParameterValue(P_DAMP);
+        reverb_damping = raw_damping + (0.998 - raw_damping) * ext_mod;
         reverb->setDamping(reverb_damping);
         reverb->process(buffer, buffer);
 
