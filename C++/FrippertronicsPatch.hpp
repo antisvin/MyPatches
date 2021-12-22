@@ -163,7 +163,11 @@ public:
                 }
                 else {
                     looper->trigRecord();
-                    is_record = !is_record;
+                    if (state == ST_RECORDING) {
+                        looper->trigRecord();
+                    }
+                    else
+                        is_record = !is_record;
                     debugMessage("Rec", (int)is_record);
                 }
                 rec_timer = 0;
