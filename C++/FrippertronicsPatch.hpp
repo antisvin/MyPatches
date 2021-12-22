@@ -28,6 +28,7 @@ const char* looper_modes[] = {
 enum LooperState {
     ST_NONE,
     ST_RECORDING,
+    ST_PLAYBACK,    
     ST_OVERDUB,
 };
 
@@ -165,9 +166,17 @@ public:
                     looper->trigRecord();
                     if (state == ST_RECORDING) {
                         looper->trigRecord();
+                        state = ST_OVERDUB;
                     }
-                    else
+                    else {
                         is_record = !is_record;
+                        if (state == ST_NONE)
+                            state = ST_RECORDING;
+                        else if (state == is_record)
+                            state = ST_OVERDUB;
+                        else
+                            state = ST_PLAYBACK;
+                    }
                     debugMessage("Rec", (int)is_record);
                 }
                 rec_timer = 0;
