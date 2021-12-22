@@ -126,8 +126,8 @@ public:
         setParameterValue(P_MIX, 0.5);
         registerParameter(P_AMOUNT, "Amount");
         setParameterValue(P_AMOUNT, 0.75);
-        //registerParameter(P_DECAY, "Decay");
-        //setParameterValue(P_DECAY, 0.7);
+        // registerParameter(P_DECAY, "Decay");
+        // setParameterValue(P_DECAY, 0.7);
         registerParameter(P_DIFFUSION, "Diffusion");
         setParameterValue(P_DIFFUSION, 0.7);
         registerParameter(P_DAMP, "Damping");
@@ -155,51 +155,34 @@ public:
         switch (bid) {
         case BUTTON_A:
             if (value) {
-                switch (state) {
-                case ST_NONE:
+                if (rec_timer < delay_click) {
+                    looper->clear();
                     is_record = false;
-                    looper->trigRecord();
-                    state = ST_RECORDING;
-                    debugMessage("REC", (int)is_record);
-                    break;
-                case ST_RECORDING:
-                    is_record = true;
-                    looper->trigRecord();
-                    state = ST_OVERDUB;
-                    debugMessage("REC", (int)is_record);
-                    break;
-                case ST_OVERDUB:
-                    if (rec_timer < delay_click) {
-                        looper->clear();
-                        is_record = false;
-                        state = ST_NONE;
-                        debugMessage("CLEAR");
-                    }
-                    else {
-                        is_reverse = !is_reverse;
-                        looper->toggleReverse();
-                        setButton(BUTTON_A, is_reverse, 0);
-                        debugMessage("REV", (int)is_reverse);
-                    }
-                    rec_timer = 0;
-                    break;
+                    state = ST_NONE;
+                    debugMessage("CLEAR");
                 }
+                else {
+                    looper->trigRecord();
+                    is_record = !is_record;
+                    debugMessage("Rec", (int)is_record);
+                }
+                rec_timer = 0;
             }
             break;
         case BUTTON_B:
             if (value) {
-                is_half_speed = !is_half_speed;
-                setButton(BUTTON_B, is_half_speed, 0);
-                looper->toggleHalfSpeed();
-                debugMessage("HALF", (int)is_half_speed);
+                is_reverse = !is_reverse;
+                setButton(BUTTON_B, is_reverse, 0);
+                looper->toggleReverse();
+                debugMessage("Rev", (int)is_reverse);
             }
             break;
         case BUTTON_C:
             if (value) {
-                is_record = !is_record;
-                setButton(BUTTON_A, is_record, 0);
-                looper->trigRecord();
-                debugMessage("Rec", (int)is_record);
+                is_half_speed = !is_half_speed;
+                setButton(BUTTON_B, is_half_speed, 0);
+                looper->toggleHalfSpeed();
+                debugMessage("Half", (int)is_half_speed);
             }
             break;
         case BUTTON_D:
