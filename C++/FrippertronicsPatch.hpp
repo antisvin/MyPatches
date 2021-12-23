@@ -14,6 +14,7 @@
 
 #define MAX_BUF_SIZE (4 * 1024 * 1024 - 1024) // In bytes, per channel
 #define DELAY_CLEAR 500 // In ms
+#define DELAY_HALF 400
 
 using Saturator = AntialiasedThirdOrderPolynomial;
 using CloudsReverb = DattorroStereoReverb<>;
@@ -28,7 +29,7 @@ const char* looper_modes[] = {
 enum LooperState {
     ST_NONE,
     ST_RECORDING,
-    ST_PLAYBACK,    
+    ST_PLAYBACK,
     ST_OVERDUB,
 };
 
@@ -115,14 +116,17 @@ public:
     SmoothFloat reverb_diffusion = SmoothFloat(0.99);
     SmoothFloat reverb_damping = SmoothFloat(0.98);
     SmoothFloat ext_mod = SmoothFloat(0.98);
-
-    bool is_record = false;
-    bool is_half_speed = false;
-    bool is_reverse = true;
-    uint32_t rec_timer = 0;
+    bool is_record, is_half_speed, is_reverse;
+    uint32_t rec_timer, b2_timer;
     uint32_t delay_click;
+    uint32_t delay_half;
 
-    FrippertronicsPatch() {
+    FrippertronicsPatch()
+        : is_record(false)
+        , is_half_speed(false)
+        , is_reverse(false)
+        , rec_timer(0)
+        , b2_timer(0) {
         registerParameter(P_MIX, "Mix");
         setParameterValue(P_MIX, 0.5);
         registerParameter(P_AMOUNT, "Amount");
@@ -144,7 +148,7 @@ public:
         looper = LooperProcessor::create(MAX_BUF_SIZE);
         state = ST_NONE;
         delay_click = getBlockRate() / 1000 * DELAY_CLEAR;
-        debugMessage("CL", (int)delay_click);
+        delay_half = getBlockRate() / 1000 * DELAY_HALF;
     }
     ~FrippertronicsPatch() {
         LooperProcessor::destroy(looper);
@@ -156,38 +160,53 @@ public:
         switch (bid) {
         case BUTTON_A:
             if (value) {
-                if (rec_timer < delay_click) {
-                    looper->clear();
-                    is_record = false;
-                    state = ST_NONE;
-                    debugMessage("CLEAR");
-                }
-                else {
+                looper->trigRecord();
+                switch (state) {
+                case ST_NONE:
+                    is_record = true;
+                    state = ST_RECORDING;
+                    break;
+                case ST_RECORDING:
                     looper->trigRecord();
-                    if (state == ST_RECORDING) {
-                        looper->trigRecord();
-                        state = ST_OVERDUB;
-                    }
-                    else {
-                        is_record = !is_record;
-                        if (state == ST_NONE)
-                            state = ST_RECORDING;
-                        else if (state == is_record)
-                            state = ST_OVERDUB;
-                        else
-                            state = ST_PLAYBACK;
-                    }
-                    debugMessage("Rec", (int)is_record);
+                    state = ST_OVERDUB;
+                    break;
+                case ST_OVERDUB:
+                    is_record = false;
+                    state = ST_PLAYBACK;
+                    break;
+                case ST_PLAYBACK:
+                    is_record = true;
+                    state = ST_OVERDUB;
+                    break;
                 }
+                debugMessage("Rec", (int)is_record);
                 rec_timer = 0;
+            }
+            else if (rec_timer > delay_click) {
+                // Falling edge after long press
+                looper->clear();
+                is_record = false;
+                state = ST_NONE;
+                debugMessage("CLEAR");
             }
             break;
         case BUTTON_B:
             if (value) {
-                is_reverse = !is_reverse;
-                setButton(BUTTON_B, is_reverse, 0);
-                looper->toggleReverse();
-                debugMessage("Rev", (int)is_reverse);
+                b2_timer = 0;
+            }
+            else {
+                if (b2_timer < delay_half) {
+                    is_reverse = !is_reverse;
+                    setButton(BUTTON_B, is_reverse, 0);
+                    looper->toggleReverse();
+                    debugMessage("Rev", (int)is_reverse);
+                }
+                else {
+                    is_half_speed = !is_half_speed;
+                    setButton(BUTTON_B, is_half_speed, 0); // ?
+                    looper->toggleHalfSpeed();
+                    debugMessage("Half", (int)is_half_speed);
+                }
             }
             break;
         case BUTTON_C:
@@ -211,6 +230,9 @@ public:
     void processAudio(AudioBuffer& buffer) {
         if (rec_timer < 0xffff)
             rec_timer++;
+
+        if (b2_timer < 0xffff)
+            b2_timer++;
 
         gain = getParameterValue(P_GAIN) * 0.5;
         buffer.multiply(gain);
