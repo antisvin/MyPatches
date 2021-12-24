@@ -116,7 +116,7 @@ public:
     SmoothFloat reverb_diffusion = SmoothFloat(0.99);
     SmoothFloat reverb_damping = SmoothFloat(0.98);
     SmoothFloat ext_mod = SmoothFloat(0.98);
-    bool is_record, is_half_speed, is_reverse;
+    bool is_record, is_half_speed, is_reverse, led_mode;
     uint32_t rec_timer, b2_timer;
     uint32_t delay_click;
     uint32_t delay_half;
@@ -126,7 +126,7 @@ public:
         , is_half_speed(false)
         , is_reverse(false)
         , rec_timer(0)
-        , b2_timer(0) {
+        , b2_timer(0), led_mode(false) {
         registerParameter(P_MIX, "Mix");
         setParameterValue(P_MIX, 0.5);
         registerParameter(P_AMOUNT, "Amount");
@@ -257,5 +257,19 @@ public:
             FloatArray t = buffer.getSamples(i);
             saturators[i]->process(t, t);
         }
+
+        switch (state) {
+        case ST_NONE:
+            led_mode = !led_mode;
+            break;
+        case ST_RECORDING:
+        case ST_OVERDUB:
+            led_mode = true;
+            break;
+        case ST_PLAYBACK:
+            led_mode = false;
+            break;
+        }
+        setButton(BUTTON_3, led_mode, 0);
     }
 };
