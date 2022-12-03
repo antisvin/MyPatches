@@ -1,7 +1,7 @@
 #ifndef __CYCLOID_OSCILLATOR_HPP__
 #define __CYCLOID_OSCILLATOR_HPP__
 
-#include "QuadratureOscillator.hpp"
+#include "ComplexOscillator.h"
 
 /**
  * A complex (quadrature) oscillator based on epicycloid/hypocycloid
@@ -9,12 +9,15 @@
  * about this curve
  */
 
-class CycloidOscillator : public QuadratureOscillator {
+class CycloidOscillator : public ComplexOscillatorTemplate<CycloidOscillator> {
 public:
+    static constexpr float begin_phase = 0;
+    static constexpr float end_phase = M_PI * 2;
+
     CycloidOscillator(float sr = 48000)
         : mul(2 * M_PI / sr) {
-        //feedback2.re = 0.f;
-        //feedback2.im = 0.f;
+        // feedback2.re = 0.f;
+        // feedback2.im = 0.f;
     }
     CycloidOscillator(float freq, float sr)
         : CycloidOscillator(sr) {
@@ -61,19 +64,19 @@ public:
         this->ratio = ratio;
         ratioIncr = incr * ratio;
     }
-    void generate(AudioBuffer& output) override {
-        render<false>(output.getSize(), NULL, output.getSamples(0).getData(),
-            output.getSamples(1).getData());
+    void generate(ComplexFloatArray output) override {
+        render<false>(output.getSize(), NULL, output.getData());
     }
-    virtual ComplexFloat generate(float fm) override {
+    ComplexFloat getSample() {
         ComplexFloat sample;
-        render<true>(1, &fm, (float*)&sample.re, (float*)&sample.im);
+        float fm = 0;
+        render<true>(1, &fm, &sample);
         return sample;
     }
-    void generate(AudioBuffer& output, FloatArray fm) override {
-        render<true>(output.getSize(), fm.getData(),
-            output.getSamples(0).getData(), output.getSamples(1).getData());
+    void generate(ComplexFloatArray output, FloatArray fm) override {
+        return render<true>(output.getSize(), fm.getData(), output.getData());
     }
+    using ComplexOscillatorTemplate<CycloidOscillator>::generate;
 
 protected:
     float mul = 0.f;
@@ -88,34 +91,35 @@ protected:
     float last_x = 0.f, last_y = 0.f, last_t = 0.f;
 
     template <bool with_fm>
-    void render(size_t size, float* fm, float* out_x, float* out_y) {
+    void render(size_t size, float* fm, ComplexFloat* out) {
         float h = harmonics;
         float h_rev = 1.f - harmonics;
         float ph = phase;
         float mph = modPhase;
         while (size--) {
-//            float x = h_rev * cos(ph) + h * cos(mph + last_x * feedback.re);
-//            float y = h_rev * sin(ph) + h * sin(mph + last_y * feedback.im);
+            //            float x = h_rev * cos(ph) + h * cos(mph + last_x * feedback.re);
+            //            float y = h_rev * sin(ph) + h * sin(mph + last_y * feedback.im);
             float fb_x = last_x * feedback.re;
             float fb_y = last_y * feedback.im;
             float x = h_rev * cos(ph + fb_x * fb_a_amt) + h * cos(mph + fb_x * fb_b_amt);
             float y = h_rev * sin(ph + fb_y * fb_a_amt) + h * sin(mph + fb_y * fb_b_amt);
 
-//            float x = cosf(phase + last_x * feedback2.re) * t;
-//            float y = sinf(phase + last_y * feedback2.im) * t;
+            //            float x = cosf(phase + last_x * feedback2.re) * t;
+            //            float y = sinf(phase + last_y * feedback2.im) * t;
 
             ph += incr;
             mph += ratioIncr;
-            if (with_fm) {
+            if constexpr(with_fm) {
                 //                modPhase += *fm;
                 phase += *fm;
                 modPhase *= *fm++;
             }
-        
-            *out_x++ = x;
+
+            out->re = x;
             last_x = x;
-            *out_y++ = y;
+            out->im = y;
             last_y = y;
+            out++;
         }
         while (ph >= M_PI * 2.f)
             ph -= M_PI * 2.f;

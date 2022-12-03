@@ -16,6 +16,7 @@
 #define P_SHIFT_AMT PARAMETER_H
 
 #define MAX_BUF_SIZE (4 * (1024 - 33) * 1024) // In bytes, per channel
+#define DOUBLE_CLICK 400 // Max double click duration in ms
 
 using Saturator = AntialiasedThirdOrderPolynomial;
 using CloudsReverb = DattorroStereoReverb<>;
@@ -128,8 +129,11 @@ public:
     bool is_record = false;
     bool is_half_speed = false;
     bool is_reverse = false;
+    uint16_t block_count;
+    uint16_t double_click;
+    uint16_t prev_click;
 
-    LoopShiftPatch() {
+    LoopShiftPatch() : block_count(0), prev_click(0) {
         registerParameter(P_MIX, "Mix");
         setParameterValue(P_MIX, 0.5);
         registerParameter(P_AMOUNT, "Amount");
@@ -151,6 +155,7 @@ public:
         saturators[0] = Saturator::create();
         saturators[1] = Saturator::create();
         looper = LooperProcessor::create(getSampleRate(), MAX_BUF_SIZE);
+        double_click = float(DOUBLE_CLICK) * getSampleRate() / 1000 * getBlockSize();
     }
     ~LoopShiftPatch() {
         LooperProcessor::destroy(looper);

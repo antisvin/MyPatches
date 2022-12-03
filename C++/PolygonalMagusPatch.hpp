@@ -7,7 +7,7 @@
 #include "SquareOscillator.hpp"
 #include "TriangleOscillator.hpp"
 #include "SineOscillator.h"
-#include "QuadratureSineOscillator.hpp"
+#include "QuadratureSineOscillator.h"
 #include "VoltsPerOctave.h"
 #include "DelayLine.hpp"
 #include "Resample.h"

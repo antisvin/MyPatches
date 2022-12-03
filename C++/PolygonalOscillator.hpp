@@ -10,10 +10,10 @@
 #include <cmath>
 #include "ComplexOscillator.h"
 
-class PolygonalOscillator : public ComplexOscillator{
+class PolygonalOscillator : public ComplexOscillator {
 public:
-//    static constexpr float begin_phase = 0.f;
-//    static constexpr float end_phase = 1.0;
+    //    static constexpr float begin_phase = 0.f;
+    //    static constexpr float end_phase = 1.0;
     enum NPolyQuant {
         NONE,
         Q025,
@@ -26,7 +26,8 @@ public:
         : mul(0.0)
         , nfreq(0.0)
         , phase(0)
-        , nPolyQuant(NONE), feedback() {
+        , nPolyQuant(NONE)
+        , feedback() {
     }
     void setSampleRate(float sr) override {
         mul = M_PI * 2 / sr;
@@ -90,25 +91,35 @@ public:
     }
     ComplexFloat generate() {
         ComplexFloat sample;
-        render<false>(1, nullptr, (float*)&sample.re, (float*)&sample.im);
+        render<false>(1, nullptr, &sample);
         return sample;
     }
     ComplexFloat generate(float fm) {
         ComplexFloat sample;
-        render<true>(1, &fm, (float*)&sample.re, (float*)&sample.im);
+        render<true>(1, &fm, &sample);
         return sample;
     }
-    void generate(AudioBuffer& output) {
-        render<false>(
-            output.getSize(), nullptr, output.getSamples(0).getData(), output.getSamples(1).getData());
+    void generate(ComplexFloatArray output) {
+        render<false>(output.getSize(), nullptr, output.getData());
     }
-    void generate(AudioBuffer& output, FloatArray fm) {
-        render<true>(
-            output.getSize(), fm.getData(), output.getSamples(0).getData(), output.getSamples(1).getData());
+    void generate(ComplexFloatArray output, FloatArray fm) override {
+        render<true>(output.getSize(), fm.getData(), output.getData());
     }
+    // using ComplexOscillator::generate;
+
+    static PolygonalOscillator* create(float sr) {
+        auto osc = new PolygonalOscillator();
+        osc->setSampleRate(sr);
+        return osc;
+    }
+
+    static void destroy(PolygonalOscillator* poly) {
+        delete poly;
+    }
+
 protected:
-    template<bool with_fm>
-    void render(size_t size, float* fm, float* out_x, float* out_y) {
+    template <bool with_fm>
+    void render(size_t size, float* fm, ComplexFloat* out) {
         float _last_p = lastP;
         float _last_x = lastX;
         float _last_y = lastY;
@@ -119,7 +130,7 @@ protected:
             else if (phase < 0.0f)
                 phase += 1.f;
 
-            if (with_fm) // Actually PM
+            if constexpr (with_fm) // Actually PM
                 phase += nfreq * *fm++;
 
             modPhase += nfreq * nPoly;
@@ -240,19 +251,19 @@ protected:
             yout1 = yout0;
 
             // Set output values
-            *out_x++ = xout;
-            *out_y++ = yout;
+            out->re = xout;
+            out->im = yout;
+            out++;
         }
         lastP = _last_p;
         lastX = _last_x;
         lastY = _last_y;
     }
 
-protected:
     float nPoly = 0.f, P = 0.f;
     float phase = 0.f, nfreq = 0.f, mul = 0.f;
     float modPhase = 0.f, modPhasePrev = 0.f;
-    NPolyQuant nPolyQuant;
+    NPolyQuant nPolyQuant = NONE;
 
     float x, y, tmp1, tmp2;
     float teeth = 0.f, fracDelay, PhiTr, fxprime, fyprime, fx, fy,
@@ -261,8 +272,8 @@ protected:
     float yout0, yout1, yout2, yout3, yout;
 
     float h0, h1, h2, h3, d1, d2, d3, d4, d5;
-    float lastP, lastX, lastY;
-    ComplexFloat feedback;
+    float lastP = 0.f, lastX = 0.f, lastY = 0.f;
+    ComplexFloat feedback {};
 };
 
 #endif

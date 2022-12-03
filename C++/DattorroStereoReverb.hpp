@@ -5,7 +5,7 @@
 
 class bypass { };
 
-template <typename Processor = bypass>
+template <bool with_smear = false, typename Processor = bypass>
 class DattorroStereoReverb : public MultiSignalProcessor {
 private:
     using LFO = SineOscillator;
@@ -41,7 +41,7 @@ public:
     }
     void process(AudioBuffer& input, AudioBuffer& output) {
         // This is the Griesinger topology described in the Dattorro paper
-        // (4 AP diffusers on the input, then a loop of 2x 2AP+1Delay).
+        // (4 AP diffusers on the input for each cchannel, then a loop of 2x 2AP+1Delay).
         // Modulation is applied in the loop of the first diffuser AP for additional
         // smearing; and to the two long delays for a slow shimmer/chorus effect.
 
@@ -57,12 +57,41 @@ public:
         float* right_out = output.getSamples(1).getData();
 
         size_t lfo1_read_offset, lfo1_write_offset, lfo2_read_offset;
-        lfo1_read_offset =
-            delays[10]->getWriteIndex() + delays[10]->getSize() - lfo_offset1;
+        size_t lfo1_read_offset_alt, lfo1_write_offset_alt;
+        //lfo1_read_offset =
+        //    delays[10]->getWriteIndex() + delays[10]->getSize() - lfo_offset1;
+
+        if constexpr (with_smear) {
+            lfo1_read_offset =
+                delays[0]->getWriteIndex() + delays[0]->getSize() - lfo_offset1;
+            lfo1_read_offset_alt =
+                delays[4]->getWriteIndex() + delays[4]->getSize() - lfo_offset1;
+            lfo1_write_offset = delays[0]->getWriteIndex() + 100; // Hardcoded for now
+            lfo1_write_offset_alt = delays[4]->getWriteIndex() + 100; // Hardcoded for now
+        }
+        else {
+            lfo1_read_offset =
+                delays[10]->getWriteIndex() + delays[10]->getSize() - lfo_offset1;
+        }
         lfo2_read_offset =
             delays[13]->getWriteIndex() + delays[13]->getSize() - lfo_offset2;
-
         while (size--) {
+            // Smear AP1 inside the loop.
+            if constexpr (with_smear) {
+                // Interpolated read with an LFO
+                float l = (lfo1->generate() + 1) * lfo_amount1;
+                float t = delays[0]->readAt(
+                    fmodf(lfo1_read_offset++ - l, delays[0]->getSize()));
+                // Write back to buffer
+                delays[0]->writeAt(lfo1_write_offset++, t);
+                t = delays[4]->readAt(
+                    fmodf(lfo1_read_offset_alt++ + l - lfo_amount1
+                    , delays[4]->getSize()));
+                // Write back to buffer
+                delays[4]->writeAt(lfo1_write_offset_alt++, t);
+
+            }
+
             // Left channel
             float acc = *left_in;
 
@@ -97,9 +126,18 @@ public:
                 processAPF(delays[i], acc, kap);
             }
 
-            acc += delays[10]->readAt(
-                       (lfo1->generate() + 1) * lfo_amount1 + lfo1_read_offset++) *
-                krt;
+            //acc += delays[10]->readAt(
+            //           (lfo1->generate() + 1) * lfo_amount1 + lfo1_read_offset++) *
+            //    krt;
+
+            if constexpr (with_smear) {
+                acc += delays[10]->read() * krt;
+            }
+            else {
+                acc += delays[10]->readAt((lfo1->generate() + 1) * lfo_amount1 +
+                           lfo1_read_offset++) *
+                    krt;
+            }
             processLPF(lp2_state, acc);
             processAPF(delays[11], acc, kap);
             processAPF(delays[12], acc, -kap);

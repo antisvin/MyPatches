@@ -12,10 +12,11 @@
 #include "DcBlockingFilter.h"
 
 #define BASE_FREQ 55.f
-#define MAX_FM_AMOUNT 0.1f
+#define MAX_FM_AMOUNT 1.0f
+//#define MAX_FM_AMOUNT 0.1f
 #define MAX_RATIO 20
 #define CHEB_ORDER 6
-//#define OVERSAMPLE_FACTOR 2
+//#define OVERSAMPLE_FACTOR 4
 
 #ifdef OVERSAMPLE_FACTOR
 #include "Resample.h"
@@ -49,15 +50,17 @@ DownSampler* downsampler_right;
 AudioBuffer* oversample_buf;
 #endif
 
-using StereoWavefolder = MultiProcessor<Wavefolder<HardClipper>, 2>;
-using StereoCheb = MultiProcessor<MorphingChebyshevPolynomial<false>, 2>;
+using Wavefolder = AntialiasedWaveFolder<HardClip>;
+using StereoWavefolder = MultiProcessor<Wavefolder, 2>;
+using StereoCheb = MultiProcessor<MorphingChebyshevPolynomial<1>, 2>;
 using StereoDc = MultiProcessor<DcBlockingFilter, 2>;
 
 class CycloidLichPatch : public Patch {
 private:
-    CycloidOscillator osc;
-    SineOscillator mod_lfo;
+    CycloidOscillator* osc;
+    SineOscillator* mod_lfo;
     DcBlockingFilter dc_fm;
+    ComplexFloatArray tmp;
 
     float attr_x = 0.0, attr_y = 0.0;
     const float attr_a = -0.827;
@@ -97,14 +100,14 @@ private:
     SmoothParam p_magnitude = SmoothParam(0.01);
 
 public:
-    CycloidLichPatch()
-        : mod_lfo(0.75, getSampleRate() / getBlockSize())
+    CycloidLichPatch() {
+        mod_lfo = SineOscillator::create(getBlockRate());
 #ifdef OVERSAMPLE_FACTOR
-        , osc(BASE_FREQ, getSampleRate() * OVERSAMPLE_FACTOR)
+        osc = CycloidOscillator::create(getSampleRate() * OVERSAMPLE_FACTOR);
 #else
-        , osc(BASE_FREQ, getSampleRate())
+        osc = CycloidOscillator::create(getSampleRate());
 #endif
-    {
+        mod_lfo->setFrequency(0.25);
         registerParameter(P_TUNE, "Tune");
         setParameterValue(P_TUNE, 0.5f);
         registerParameter(P_HARMONICS, "Harmonics");
@@ -141,6 +144,9 @@ public:
         downsampler_left = DownSampler::create(1, OVERSAMPLE_FACTOR);
         downsampler_right = DownSampler::create(1, OVERSAMPLE_FACTOR);
         oversample_buf = AudioBuffer::create(2, getBlockSize() * OVERSAMPLE_FACTOR);
+        tmp = ComplexFloatArray::create(getBlockSize() * OVERSAMPLE_FACTOR);
+#else
+        tmp = ComplexFloatArray::create(getBlockSize());
 #endif
 
         setButton(BUTTON_A, false, 0);
@@ -160,6 +166,9 @@ public:
         DownSampler::destroy(downsampler_right);
         AudioBuffer::destroy(oversample_buf);
 #endif
+        ComplexFloatArray::destroy(tmp);
+        SineOscillator::destroy(mod_lfo);
+        CycloidOscillator::destroy(osc);
     }
 
     void lockAll() {
@@ -206,7 +215,7 @@ public:
         float old_x = attr_x, old_y = attr_y;
         attr_x = sin(attr_a * old_y) - cos(attr_b * old_x);
         attr_y = sin(attr_c * old_x) - cos(attr_d * old_y);
-        lfo_sample = mod_lfo.generate(attr_y * chaos * 0.02);
+        lfo_sample = mod_lfo->generate(attr_y * chaos * 0.02);
     }
 
     void processAudio(AudioBuffer& buffer) {
@@ -252,11 +261,11 @@ public:
             p_ratio.update(getParameterValue(P_MULT));
             int divisor = (MAX_RATIO / 2 + 1) * p_divisor.getValue();
             if (divisor == 0) {
-                osc.setRatio((p_ratio.getValue() - 0.5f) * MAX_RATIO);
+                osc->setRatio((p_ratio.getValue() - 0.5f) * MAX_RATIO);
             }
             else {
                 int multiplier = MAX_RATIO * p_multiplier.getValue() + 1;
-                osc.setRatio(float(multiplier - MAX_RATIO / 2) / float(divisor));
+                osc->setRatio(float(multiplier - MAX_RATIO / 2) / float(divisor));
             }
         }
 
@@ -268,12 +277,12 @@ public:
         p_direction.update(getParameterValue(P_DIR));
         p_magnitude.update(getParameterValue(P_MAG));
 
-        osc.setFrequency(freq);
-        osc.setHarmonics(p_harmonics.getValue());
-        //osc.setFeedback1(p_feedback.getValue());
+        osc->setFrequency(freq);
+        osc->setHarmonics(p_harmonics.getValue());
+        //osc->setFeedback1(p_feedback.getValue());
         float fb = p_feedback;
         float fb_scale = 2.f - (2.f * fb - 1.f);
-        osc.setFeedback(
+        osc->setFeedback(
             p_fb_magnitude.getValue(), p_fb_direction.getValue() * M_PI * 4.f,
             fb, 1.f - fb);
 
@@ -283,7 +292,8 @@ public:
 #else
         AudioBuffer& audio_buf = buffer;
 #endif
-        osc.generate(audio_buf, audio_buf.getSamples(1));
+        osc->generate(tmp, audio_buf.getSamples(1));
+        tmp.copyTo(audio_buf.getSamples(0), audio_buf.getSamples(1));
 
         // Chebyshev wavefolder
         float fold = p_fold.getValue();

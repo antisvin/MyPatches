@@ -11,6 +11,12 @@ public:
     SawOscillator(float freq, float sr)
         : BandlimitedOscillator(freq, sr) {
     }
+    static SawOscillator* create(float sr) {
+        return new SawOscillator(sr);
+    }
+    static void destroy(SawOscillator *osc) {
+        delete osc;
+    }
 protected:
     void render(size_t size, float* out) override {
         while (size--) {

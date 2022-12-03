@@ -4,7 +4,7 @@
 #define P_MIX PARAMETER_A
 #define P_TRANSPOSE PARAMETER_B
 #define P_MOD PARAMETER_C
-#define DELAY_MS 50 // Shift can be 30-100 ms lets just start with 50 for now.
+#define DELAY_MS 30 // Shift can be 30-100 ms lets just start with 50 for now.
 #define SEMITONES 12
 
 class PitchShifterProcessor : public SignalProcessor {

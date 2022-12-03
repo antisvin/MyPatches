@@ -13,7 +13,12 @@ public:
         : PWBandlimitedOscillator(freq, sr)
         , previous_pw(0.5)
         , next_sample(0.0) {}
-
+    static SquareOscillator* create(float sr) {
+        return new SquareOscillator(sr);
+    }
+    static void destroy(SquareOscillator *osc) {
+        delete osc;
+    }
 protected:
     float previous_pw;
     bool high;
@@ -32,31 +37,31 @@ protected:
             }            
 
             if (!high && phase >= pw) {
-                float t = (phase - pw) / (previous_pw - pw + phase);
+                const float t = (phase - pw) / (previous_pw - pw + nfreq);
 
-                this_sample += stmlib::ThisBlepSample(t);
-                next_sample += stmlib::NextBlepSample(t);
+                this_sample -= stmlib::ThisBlepSample(t);
+                next_sample -= stmlib::NextBlepSample(t);
                 high = true;
             }
 
             if (high && phase >= 1.0) {
                 phase -= 1.0;
 
-                float t = phase / nfreq;
+                const float t = phase / nfreq;
                     
-                this_sample -= stmlib::ThisBlepSample(t);
-                next_sample -= stmlib::NextBlepSample(t);
+                this_sample += stmlib::ThisBlepSample(t);
+                next_sample += stmlib::NextBlepSample(t);
                 high = false;
             }
 
-            next_sample += renderNaiveSample();
+            next_sample += renderNaive();
             previous_pw = pw;
 
             *out++ = (2.0f * this_sample - 1.0f);
         }
     }
-    inline float renderNaiveSample(){
-        return phase < pw ? 0.0f : 1.0f;
+    inline float renderNaive(){
+        return phase < pw ? 1.0f : 0.0f;
     }
 };
 

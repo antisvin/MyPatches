@@ -28,7 +28,7 @@ public:
         registerParameter(P_INDEX, "Loop point");
         registerParameter(P_TEMPO, "Tempo");
         sample_buf = WavLoader::load("breaks/jungle2.wav");
-        player = Player::create(getSampleRate(), sample_buf);
+        player = Player::create(getSampleRate(), sample_buf, 4.0);
         tempo = AdjustableTapTempo::create(getSampleRate(), 1 << 22);
         player->setLooping(true);
         // player->trigger();

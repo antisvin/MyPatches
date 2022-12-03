@@ -59,10 +59,10 @@ public:
         transition = 0;
     }
     void setDuration(size_t samples) {
-        if (is_looping)
-            samples += fade_size;
+        //if (is_looping)
+        //    samples += fade_size;
         rate = float(length) / float(samples);
-        fade_start = length - rate * fade_size;
+        //fade_start = length - rate * fade_size;
     }
     void setDuration(float seconds) {
         setDuration(size_t(seconds * sr));
@@ -82,7 +82,12 @@ public:
     float getPosition() const {
         return pos;
     }
-    // float interpolate(float index, FloatArray data);
+    float getLoopPosition() const {
+        return (float)pos / (loop_points[loop_index + 1] - loop_points[loop_index]);
+    }
+    size_t getStepDuration() const {
+        return length / grid_size;
+    }
     using SignalGenerator::generate;
     float generate() override {
         float sample;
@@ -127,19 +132,19 @@ public:
         case SP_PLAY:
             sample = SamplePlayerInterpolation<im>::interpolate(pos, buffer);
             // debugMessage("P", (float)pos);
-            if (pos >= fade_start) {
-                transition = 0;
+            pos += rate;
+            if (pos >= end) {
+                transition = (pos - end) / rate;
                 state = is_looping ? SP_CROSSFADE : SP_FADE_OUT;
             }
-            pos += rate;
             break;
         }
         return sample;
     }
-    static SamplePlayer* create(float sr, FloatArray buf) {
+    static SamplePlayer* create(float sr, FloatArray buf, float max_rate) {
         auto sampler = new SamplePlayer(sr, buf);
         sampler->start = sampler->findZeroCrossing(0, true);
-        sampler->end = sampler->findZeroCrossing(buf.getSize(), false);
+        sampler->end = sampler->findZeroCrossing(buf.getSize() - fade_size * max_rate, false);
         sampler->length = sampler->end - sampler->start;
         sampler->transition_step = 1.0 / fade_size;
         sampler->setDuration(sampler->length);

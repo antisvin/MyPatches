@@ -88,7 +88,16 @@ public:
         phasor.re = t - k1 * phasor.im;
         return phasor;
     }
-    virtual void generate(ComplexFloatArray output) {
+    void generate(AudioBuffer& buffer) {
+        float* left = buffer.getSamples(0).getData();
+        float* right = buffer.getSamples(1).getData();
+        for (int i = 0; i < buffer.getSize(); i++) {
+            ComplexFloat sample = generate();
+            *left++ = sample.re;    
+            *right++ = sample.im;    
+        }
+    }
+    virtual void generate(ComplexFloatArray output) override {
         for (size_t i = 0; i < output.getSize(); ++i) {
             output[i] = generate();
         }

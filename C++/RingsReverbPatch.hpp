@@ -19,7 +19,6 @@ class RingsReverbPatch : public Patch {
 public:
     RingsReverb* reverb;
     SmoothFloat gain = SmoothFloat(0.98, 0);
-    FloatArray tmp;
     const size_t pre_delay_max;
     SmoothStiffInt pre_delay = SmoothStiffInt(0.98, 16);
     Saturator* saturators[2];
@@ -42,7 +41,6 @@ public:
         reverb = RingsReverb::create(
             pre_delay_max + getBlockSize(), getBlockSize(), getSampleRate(), rings_delays);
         reverb->setModulation(4460, 40, 6261, 50);
-        tmp = FloatArray::create(getBlockSize());
         saturators[0] = Saturator::create();
         saturators[1] = Saturator::create();
     }
@@ -50,7 +48,7 @@ public:
         RingsReverb::destroy(reverb);
         Saturator::destroy(saturators[0]);
         Saturator::destroy(saturators[1]);
-    }
+    }    
     void processAudio(AudioBuffer& buffer) {
         FloatArray left = buffer.getSamples(0);
         FloatArray right = buffer.getSamples(1);

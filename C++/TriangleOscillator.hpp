@@ -15,7 +15,12 @@ public:
         , previous_pw(0.5)
         , next_sample(0.0) {
     }
-
+    static TriangleOscillator* create(float sr) {
+        return new TriangleOscillator(sr);
+    }
+    static void destroy(TriangleOscillator *osc) {
+        delete osc;
+    }
 protected:
     float previous_pw;
     bool high;
@@ -47,7 +52,7 @@ protected:
             if (high && phase >= 1.0) {
                 // BLEP for second discontinuty after triangle lower peak
                 // Wrap phase here
-                while (phase >= 1.0)
+                //while (phase >= 1.0)
                     phase -= 1.0f;
                 const float t = phase / nfreq;
                 const float triangle_step = (slope_up + slope_down) * nfreq;

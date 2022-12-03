@@ -432,7 +432,7 @@ public:
 #endif
         // Generate quadrature output
         dsf->generate(tmp, audio_buf.getSamples(1));
-        tmp.copyTo(buffer);
+        tmp.copyTo(buffer.getSamples(0), buffer.getSamples(1));
 
         p_fold.update(getParameterValue(P_FOLD));
         float gain = 1.f + p_fold.getValue() * 3.f;

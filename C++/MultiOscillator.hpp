@@ -7,7 +7,7 @@
 /**
  * A class that contains multiple child oscillators and morphs between 2 of them
  */
-template <size_t limit, typename OscillatorClass>
+template <size_t limit, typename OscillatorClass, bool render_always=false>
 class MultiOscillatorTemplate : public OscillatorClass {
 public:
     MultiOscillatorTemplate(float sr = 48000)
@@ -77,8 +77,14 @@ public:
         return num_oscillators;
     }
     float generate() override {
+        if constexpr (render_always)
+            for (int i = 0; i < morph_idx; i++)
+                oscillators[i]->generate();
         float sample_a = oscillators[morph_idx]->generate();
         float sample_b = oscillators[morph_idx + 1]->generate();
+        if constexpr (render_always)
+            for (int i = morph_idx + 2; i < num_oscillators; i++)
+                oscillators[i]->generate();
         phase = oscillators[morph_idx]->getPhase();
         return sample_a + (sample_b - sample_a) * morph_frac;
     }
@@ -120,6 +126,7 @@ template <size_t limit>
 class MultiOscillator : public MultiOscillatorTemplate<limit, Oscillator> {
 public:
     using MultiOscillatorTemplate<limit, Oscillator>::MultiOscillatorTemplate;
+    using MultiOscillatorTemplate<limit, Oscillator>::generate;
     // using MultiOscillatorTemplate<limit, Oscillator>::oscillators;
     // using MultiOscillatorTemplate<limit, Oscillator>::morph_idx;
     //    MultiOscillator()

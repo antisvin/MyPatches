@@ -3,12 +3,13 @@
 
 #define USE_FFT
 #define FFT_SIZE 4096
-#define MIN_FREQ 100
+#define MIN_FREQ 50
 #define MAX_FREQ 1000
 #define TUNING 440.f
 #define ENV_THRESHOLD 0.1 // Amplitude detection threshold
 #define ENV_ATTACK 10
 #define ENV_RELEASE 20
+#define RESOLUTION_MAX (65535)
 
 const char* note_names[12] = {
     "C ",
@@ -34,7 +35,6 @@ public:
     void setFrequency(float freq) {
         this->freq = freq;
         float _cents = 12.0 * log2f(freq / base) + 69;
-        debugMessage("C", _cents);  
         midi_note = _cents;
         _cents -= (int)_cents;
         cents = _cents * 100;
@@ -69,6 +69,13 @@ using Detector = FourierPitchDetector;
 using Detector = ZeroCrossingPitchDetector;
 #endif
 
+/**
+ * @brief Utility to extract envelope from audio
+ * 
+ * https://www.musicdsp.org/en/latest/Analysis/136-envelope-follower-with-different-attack-and-release.html
+ * 
+ */
+
 class AmplitudeFollower : public SignalProcessor {
 public:
     AmplitudeFollower()
@@ -76,7 +83,8 @@ public:
     }
     AmplitudeFollower(float threshold, float mul)
         : threshold(threshold)
-        , mul(mul), last_env(0) {
+        , mul(mul)
+        , last_env(0) {
     }
     using SignalProcessor::process;
     float process(float input) {
@@ -118,20 +126,19 @@ private:
     float last_env;
 };
 
-
 class TuningEstimator {
 public:
     /**
      * @brief Get the Estimate object
-     * 
+     *
      * Outputs value in [-1..1] range suitable for LED PWM
      * or display as a scale.
-     * 
+     *
      * For example, chromatic scale would give 0.6 for C+30 cents
      * or -0.6 for C + 70 cents.
-     * 
-     * @param cents 
-     * @return float 
+     *
+     * @param cents
+     * @return float
      */
     float getEstimate(float cents) {
         float min_delta = 10000;
@@ -160,11 +167,56 @@ public:
         }
         return min_delta;
     }
+
 private:
     uint8_t* notes;
     uint8_t num_notes;
 };
 
+/**
+ * @brief PWM LED control, borrowed from libDaisy:
+ *  https://github.com/electro-smith/libDaisy/blob/master/src/hid/led.cpp
+ *
+ */
+class PwmLed {
+public:
+    PwmLed() = default;
+    PwmLed(bool invert, float samplerate)
+        : invert(invert)
+        , samplerate(samplerate) {
+        bright = 0.0f;
+        pwm_cnt = 0;
+        set(bright);
+        invert = invert;
+        samplerate = samplerate;
+        if (invert) {
+            on = false;
+            off = true;
+        }
+        else {
+            on = true;
+            off = false;
+        }
+    }
+    void set(float val) {
+        //bright = val * val * val; // Curve ends up too steep
+        bright = val;
+        pwm_thresh = bright * static_cast<float>(RESOLUTION_MAX);
+    }
+    bool get() {
+        pwm += 120.f / samplerate;
+        if (pwm > 1.f)
+            pwm -= 1.f;
+        return bright > pwm ? on : off;
+    }
+
+private:
+    size_t pwm_cnt, pwm_thresh;
+    float bright;
+    float pwm;
+    float samplerate;
+    bool invert, on, off;
+};
 
 class TunerPatch : public MonochromeScreenPatch {
 public:
@@ -173,8 +225,13 @@ public:
     float frequency;
     Tuning tuning;
     TuningEstimator estimator;
+    float estimate;
+    PwmLed leds[2];
+    bool buttons[2];
     TunerPatch()
         : frequency(0) {
+        leds[0] = PwmLed(false, getBlockRate());
+        leds[1] = PwmLed(false, getBlockRate());
         tuning.setBase(TUNING);
         follower = AmplitudeFollower::create(getSampleRate(), ENV_THRESHOLD);
         follower->setAttack(ENV_ATTACK);
@@ -213,10 +270,7 @@ public:
         for (int i = width / 8; i < width; i += width / 8) {
             screen.drawVerticalLine(i, 30, 4, WHITE);
         }
-        float estimate = estimator.getEstimate(tuning.getCents() / 100);
         screen.drawRectangle(width / 2 + width / 2 * estimate - 1, 28, 2, 8, WHITE);
-        //screen.print(30, 30, msg_ftoa(cents, 10));
-        //screen.print(30, 40, msg_ftoa(estimate, 10));
     }
     void processAudio(AudioBuffer& buf) override {
         FloatArray left = buf.getSamples(0);
@@ -234,5 +288,30 @@ public:
         if (follower->checkThreshold())
             frequency = detector->getFrequency();
 #endif
+
+        if (frequency > 0.0) {
+            estimate = estimator.getEstimate(tuning.getCents() / 100);
+            if (estimate > 0) {
+                leds[0].set(estimate);
+                leds[1].set(0);
+            }
+            else {
+                leds[0].set(0);
+                leds[1].set(-estimate);
+            }
+        }
+
+        debugMessage(tuning.getNoteName(), estimate);
+
+        // Above note
+        bool button = leds[0].get();
+        setButton(GREEN_BUTTON, button, 0);
+        setButton(BUTTON_2, button, 0);
+        // below note
+        button = leds[1].get();
+        setButton(RED_BUTTON, button, 0);
+        setButton(BUTTON_1, button, 0);
+        //setParameterValue(PARAMETER_F, estimate < 0 ? -estimate : 0);
+        //setParameterValue(PARAMETER_G, estimate > 0 ? estimate : 0);
     }
 };

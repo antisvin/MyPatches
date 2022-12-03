@@ -1,41 +1,14 @@
 #include "OpenWareLibrary.h"
-#include "MultiOscillator.hpp"
 
 #define P_TUNE PARAMETER_A
 #define P_SHAPE PARAMETER_B
 #define P_MIX PARAMETER_C
 #define P_DETUNE PARAMETER_D
 
-using O1 = AntialisedRampOscillator;
+using O1 = AntialiasedRampOscillator;
 using O2 = AntialiasedTriangleOscillator;
-using O3 = SineOscillator;
-using O4 = AntialiasedSquareWaveOscillator;
-using O5 = AntialiasedSquareWaveOscillator; // Narrow pulse
-
-class MorphingOscillator : public MultiOscillator<5> {
-public:
-    using MultiOscillator<5>::MultiOscillator;
-    // using MultiOscillator<5>::generate;
-
-    void setPulseWidth(float pw) {
-        static_cast<O5*>(oscillators[4])->setPulseWidth(pw);
-    }
-
-    static MorphingOscillator* create(float sr) {
-        auto osc = new MorphingOscillator(sr);
-        osc->addOscillator(O1::create(sr));
-        osc->addOscillator(O2::create(sr));
-        osc->addOscillator(O3::create(sr));
-        osc->addOscillator(O4::create(sr));
-        auto o5 = O5::create(sr);
-        o5->setPulseWidth(0.01);
-        osc->addOscillator(o5);
-        return osc;
-    }
-    static void destroy(MorphingOscillator* osc) {
-        MultiOscillator::destroy(osc);
-    }
-};
+using O3 = AntialiasedSquareWaveOscillator;
+using O4 = AntialiasedSquareWaveOscillator; // Narrow pulse
 
 template <size_t num_oscillators, typename OscillatorClass>
 class SwarmOscillator : public OscillatorTemplate<SwarmOscillator<num_oscillators, OscillatorClass>> {
@@ -71,12 +44,12 @@ public:
     }
     void setMorph(float morph) {
         for (int i = 0; i < num_oscillators; i++) {
-            oscillators[i]->setMorph(morph);
+            oscillators[i]->morph(morph);
         }
     }
     void setPulseWidth(float pw) {
         for (int i = 0; i < num_oscillators; i++) {
-            oscillators[i]->setPulseWidth(pw);
+            static_cast<O4*>(oscillators[i]->getOscillator(num_oscillators - 1))->setPulseWidth(pw);
         }
     }
     float getSample() {
@@ -98,12 +71,23 @@ public:
     static SwarmOscillator* create(float sr, size_t block_size) {
         auto oscillators = new OscillatorClass*[num_oscillators];
         for (int i = 0; i < num_oscillators; i++) {
-            oscillators[i] = OscillatorClass::create(sr);
+            auto osc = OscillatorClass::create(4);
+            osc->setOscillator(0, O1::create(sr));
+            osc->setOscillator(1, O2::create(sr));
+            osc->setOscillator(2, O3::create(sr));
+            auto o4 = O4::create(sr);
+            o4->setPulseWidth(0.01);
+            osc->setOscillator(3, o4);
+            oscillators[i] = osc;
         }
         return new SwarmOscillator(sr, oscillators, FloatArray::create(block_size));
     }
     static void destroy(SwarmOscillator* osc) {
         for (int i = 0; i < num_oscillators; i++) {
+            O1::destroy(static_cast<O1*>(osc->oscillators[i]->getOscillator(0)));
+            O2::destroy(static_cast<O2*>(osc->oscillators[i]->getOscillator(1)));
+            O3::destroy(static_cast<O3*>(osc->oscillators[i]->getOscillator(2)));
+            O4::destroy(static_cast<O4*>(osc->oscillators[i]->getOscillator(3)));
             OscillatorClass::destroy(osc->oscillators[i]);
         }
         delete[] osc->oscillators;
@@ -124,6 +108,8 @@ class SwarmOscillatorPatch : public Patch {
 public:
     SwarmOsc* osc;
     VoltsPerOctave hz;
+    float shape;
+    //SmoothFloat shape = SmoothFloat(0.99);
 
     SwarmOscillatorPatch() {
         registerParameter(P_TUNE, "Tune");
@@ -153,11 +139,12 @@ public:
         osc->setDetune(getParameterValue(P_DETUNE));
         osc->setMix(getParameterValue(P_MIX));
         osc->setFrequency(freq);
-        float shape = getParameterValue(P_SHAPE);
+        shape = getParameterValue(P_SHAPE);
         if (shape >= 0.8)
             osc->setPulseWidth(0.5 - (shape - 0.8) * 4.98 / 2);
         osc->setMorph(shape);
         osc->generate(left);
+        left.multiply(0.7);
         left.copyTo(buffer.getSamples(1));
     }
 };

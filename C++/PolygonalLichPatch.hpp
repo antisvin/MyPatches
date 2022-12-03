@@ -15,11 +15,10 @@
 
 #define BASE_FREQ 55.f
 #define MAX_POLY 20.f
-#define MAX_FM_AMOUNT 0.1f
-#define QUANTIZER Quantizer12TET
+#define MAX_FM_AMOUNT 1.0f //0.1f
+//#define QUANTIZER Quantizer12TET
 
-// Oversampling ends up sounding fairly disappointing
-//#define OVERSAMPLE_FACTOR 2
+#define OVERSAMPLE_FACTOR 4
 
 #ifdef OVERSAMPLE_FACTOR
 #include "Resample.h"
@@ -78,11 +77,12 @@ private:
     DownSampler* downsampler_right;
     AudioBuffer* oversample_buf;
 #endif
+    ComplexFloatArray tmp;
     bool isModeA = false, isModeB = false;
     float fm_ratio;
     float fm_amount;
     VoltsPerOctave hz;
-    DualSidebandFrequencyShifter* shifter;
+    ComplexRotator* shifter;
     float lfo_sample;
     SmoothParam p_teeth = SmoothParam(0.01);
     SmoothParam p_npoly = SmoothParam(0.01);
@@ -108,10 +108,12 @@ public:
         osc.setSampleRate(getSampleRate() * OVERSAMPLE_FACTOR);
         osc.setFrequency(BASE_FREQ);
         mod.addOscillators(BASE_FREQ, getSampleRate() * OVERSAMPLE_FACTOR);
+        tmp = ComplexFloatArray::create(getBlockSize() * OVERSAMPLE_FACTOR);
 #else
         osc.setSampleRate(getSampleRate());
         osc.setFrequency(BASE_FREQ);
         mod.addOscillators(BASE_FREQ, getSampleRate());
+        tmp = ComplexFloatArray::create(getBlockSize());
 #endif
         registerParameter(PARAMETER_A, "Tune");
         registerParameter(PARAMETER_B, "NPoly");
@@ -153,10 +155,10 @@ public:
         downsampler_left = DownSampler::create(1, OVERSAMPLE_FACTOR);
         downsampler_right = DownSampler::create(1, OVERSAMPLE_FACTOR);
         oversample_buf = AudioBuffer::create(2, getBlockSize() * OVERSAMPLE_FACTOR);
-        shifter = DualSidebandFrequencyShifter::create(
-            getSampleRate() * OVERSAMPLE_FACTOR);
+        shifter = ComplexRotator::create(
+            getSampleRate() * OVERSAMPLE_FACTOR, getBlockSize() * OVERSAMPLE_FACTOR);
 #else
-        shifter = DualSidebandFrequencyShifter::create(getSampleRate());
+        shifter = ComplexRotator::create(getSampleRate(), getBlockSize());
 #endif
         setButton(BUTTON_A, false, 0);
         setButton(BUTTON_B, false, 0);
@@ -166,7 +168,7 @@ public:
     }
 
     ~PolygonalLichPatch() {
-        DualSidebandFrequencyShifter::destroy(shifter);
+        ComplexRotator::destroy(shifter);
 #ifdef OVERSAMPLE_FACTOR
         UpSampler::destroy(upsampler_pitch);
         UpSampler::destroy(upsampler_fm);
@@ -174,6 +176,7 @@ public:
         DownSampler::destroy(downsampler_right);
         AudioBuffer::destroy(oversample_buf);
 #endif
+        ComplexFloatArray::destroy(tmp);
 #ifndef EXT_FM
         FloatArray::destroy(env_copy);
 #endif
@@ -281,9 +284,9 @@ public:
         p_fm_shape.update(getParameterValue(PARAMETER_AB));
         fm_ratio = p_fm_shape.getValue();
         p_rotation.update(getParameterValue(PARAMETER_AD));
-        shifter->setFrequency(p_rotation.getValue() * 1000);
-        // p_shift.update(getParameterValue(PARAMETER_AE));
-        // phaser->setControl(p_shift.getValue());
+        shifter->setFrequency(p_rotation.getValue() * 10);
+        p_shift.update(getParameterValue(PARAMETER_AE));
+        shifter->setAmount(p_shift.getValue());
 
         osc.setFrequency(freq);
 #ifdef OVERSAMPLE_FACTOR
@@ -314,7 +317,8 @@ public:
         // Generate quadrature output
         // return;
         // osc.generate(audio_buf);
-        osc.generate(audio_buf, audio_buf.getSamples(1));
+        osc.generate(tmp, audio_buf.getSamples(1));
+        tmp.copyTo(audio_buf.getSamples(0), audio_buf.getSamples(1));
         shifter->process(audio_buf, audio_buf);
 
 #ifdef OVERSAMPLE_FACTOR

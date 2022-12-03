@@ -2,7 +2,7 @@
 #define __WAVEFOLDER_HPP__
 
 #include "SignalProcessor.h"
-#include "Clipping.hpp"
+#include "Nonlinearity.hpp"
 
 // Source: https://github.com/fabianesqueda/Agave/blob/master/src/dsp/Waveshaping.hpp
 

@@ -11,7 +11,7 @@
 #define P_GAIN PARAMETER_AA
 
 using Saturator = BypassProcessor<AntialiasedThirdOrderPolynomial>;
-using CloudsReverb = DattorroStereoReverb<>;
+using CloudsReverb = DattorroStereoReverb<true>;
 
 class CloudsStereoReverbPatch : public Patch {
 public:
@@ -32,7 +32,8 @@ public:
         registerParameter(P_GAIN, "Gain");
         setParameterValue(P_GAIN, 1.0);
         reverb = CloudsReverb::create(getBlockSize(), getSampleRate(), clouds_delays);
-        reverb->setModulation(3300, 80, 4680, 100);
+        reverb->setModulation(10, 60, 4680, 100);
+        //reverb->setModulation(3300, 80, 4680, 100);
         saturators[0] = Saturator::create();
         saturators[0]->setBypass(bypassed);
         saturators[1] = Saturator::create();

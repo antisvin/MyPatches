@@ -1,4 +1,5 @@
 #ifndef __NONLINEARITY_HPP__
+#define __NONLINEARITY_HPP__
 
 #include "basicmaths.h"
 #include <cmath>
